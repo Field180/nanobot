@@ -1348,11 +1348,12 @@ _KG_DB_PATH = Path.home() / ".nanobot" / "knowledge_graph.db"
 import time as _time_mod_db
 import threading as _threading_db
 
-# R10: Time-driven checkpoint/vacuum state — shared across all _open_db calls.
-# Prevents per-query overhead while ensuring maintenance runs periodically.
+# R10/R11: Hybrid checkpoint/vacuum state — shared across all _open_db calls.
+# Time-driven (max once per interval) + WAL-size-driven (immediate if WAL > threshold).
 _DB_MAINT_LOCK = _threading_db.Lock()
 _DB_MAINT_INTERVAL = 30.0  # seconds — checkpoint/vacuum at most once per interval
-_db_maint_last: dict[str, float] = {}  # path_str → last success monotonic time
+_DB_MAINT_WAL_THRESHOLD = 1 * 1024 * 1024  # 1 MB — bypass interval if WAL exceeds this
+_db_maint_last: dict[str, float] = {}  # path_str → last maintenance monotonic time
 _db_maint_fail_count: dict[str, int] = {}  # path_str → consecutive failure count
 _db_maint_last_success: dict[str, float] = {}  # path_str → last success wall-clock time
 
@@ -1366,8 +1367,10 @@ def _open_db(path: Path):
     PRAGMA order matters: auto_vacuum must precede journal_mode=WAL because
     WAL initialisation on a fresh DB locks the auto_vacuum setting to 0.
 
-    R10: WAL checkpoint + incremental vacuum are time-driven (max once per 30s)
-    rather than per-connection. Failures are logged and counted for observability.
+    R11: WAL checkpoint + incremental vacuum use a hybrid trigger:
+    (a) time-driven — max once per 30s, AND
+    (b) WAL-size-driven — immediate if WAL file > 1 MB (bypasses interval).
+    Failures are logged and counted for observability.
     """
     import sqlite3
     from contextlib import contextmanager
@@ -1389,17 +1392,28 @@ def _open_db(path: Path):
                 logger.warning("[SQLite] busy_timeout=%d (expected 5000) on %s", _bt, path)
             yield conn
         finally:
-            # R10: Time-driven WAL checkpoint + incremental vacuum.
-            # Runs at most once per _DB_MAINT_INTERVAL to avoid per-query overhead.
+            # R11: Hybrid WAL maintenance — time-driven OR WAL-size-driven.
+            # Time: at most once per _DB_MAINT_INTERVAL (avoids per-query overhead).
+            # Size: immediate if WAL file > _DB_MAINT_WAL_THRESHOLD (adapts to load).
             _path_key = str(path)
             _now = _time_mod_db.monotonic()
             _should_maint = False
             with _DB_MAINT_LOCK:
                 _last = _db_maint_last.get(_path_key, 0.0)
-                if _now - _last >= _DB_MAINT_INTERVAL:
-                    _db_maint_last[_path_key] = _now
-                    _should_maint = True
+                _interval_elapsed = (_now - _last >= _DB_MAINT_INTERVAL)
+            if _interval_elapsed:
+                _should_maint = True
+            else:
+                # Check WAL file size — bypass interval if WAL is large
+                try:
+                    _wal_path = Path(_path_key + "-wal")
+                    if _wal_path.is_file() and _wal_path.stat().st_size > _DB_MAINT_WAL_THRESHOLD:
+                        _should_maint = True
+                except OSError:
+                    pass  # stat failure — skip size check, rely on interval
             if _should_maint:
+                with _DB_MAINT_LOCK:
+                    _db_maint_last[_path_key] = _now
                 try:
                     conn.execute("PRAGMA wal_checkpoint(PASSIVE)")
                     conn.execute("PRAGMA incremental_vacuum(64)")

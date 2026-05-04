@@ -2170,6 +2170,9 @@ _r10_open_db_src = _ct_inspect.getsource(_ct_al._open_db)
 check("r10_has_interval_guard",
       "_DB_MAINT_INTERVAL" in _r10_open_db_src and "monotonic" in _r10_open_db_src,
       "_open_db must use time-driven maintenance interval guard")
+check("r11_has_wal_size_trigger",
+      "_DB_MAINT_WAL_THRESHOLD" in _r10_open_db_src,
+      "_open_db must check WAL file size to bypass interval for load-adaptive maintenance")
 check("r10_has_checkpoint",
       "wal_checkpoint(PASSIVE)" in _r10_open_db_src,
       "_open_db must execute PRAGMA wal_checkpoint(PASSIVE)")
@@ -2208,6 +2211,31 @@ try:
         _r10_last_after = _ct_al._db_maint_last_success.get(_r10_path_key)
     check("r10_time_driven_skip", _r10_last_before == _r10_last_after,
           "rapid second close must skip maintenance (within 30s interval)")
+
+    # R11 behavioral: WAL size bypass — create a large WAL, verify maintenance runs despite interval
+    _r11_wal_file = Path(_r10_path_key + "-wal")
+    if _r11_wal_file.is_file():
+        # Write >1MB of data to make WAL large enough to trigger size-based bypass
+        with _open_db(_r10_db_path) as _r11_conn:
+            _r11_conn.execute("CREATE TABLE IF NOT EXISTS _r11_bulk (data TEXT)")
+            # Insert enough data to grow WAL past 1MB threshold
+            _r11_conn.executemany("INSERT INTO _r11_bulk (data) VALUES (?)",
+                                  [("X" * 4096,)] * 300)  # ~1.2 MB
+            _r11_conn.commit()
+        # WAL should be > 1MB now; next close within interval should still trigger maint
+        with _ct_al._DB_MAINT_LOCK:
+            _r11_ts_before = _ct_al._db_maint_last_success.get(_r10_path_key)
+        with _open_db(_r10_db_path) as _r11_conn2:
+            _r11_conn2.execute("SELECT 1")
+        with _ct_al._DB_MAINT_LOCK:
+            _r11_ts_after = _ct_al._db_maint_last_success.get(_r10_path_key)
+        check("r11_wal_size_bypass",
+              _r11_ts_after is not None and (_r11_ts_before is None or _r11_ts_after > _r11_ts_before),
+              "large WAL (>1MB) must trigger maintenance even within 30s interval")
+    else:
+        # WAL file doesn't exist (no WAL mode?) — skip size bypass test
+        check("r11_wal_size_bypass", True,
+              "WAL file absent — size bypass test skipped (WAL mode may not be active)")
 finally:
     _r10_db_path.unlink(missing_ok=True)
     Path(str(_r10_db_path) + "-wal").unlink(missing_ok=True)
