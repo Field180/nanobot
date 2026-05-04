@@ -2774,6 +2774,64 @@ if _r16_os.path.isfile(_r20_dashboard_path):
           any(i.get("type") == "datasource" for i in _r20_dash.get("__inputs", [])),
           "Dashboard must define a datasource input variable for portability")
 
+# ── R21: CI sync validation — alerts↔Runbook, Dashboard↔metrics ──
+print("\n  -- Audit R21: alerts.yml ↔ RUNBOOK.md sync --")
+import yaml as _r21_yaml
+_r21_alerts_path = _r16_os.path.join(_r16_os.path.dirname(__file__), "..", "deploy", "prometheus", "alerts.yml")
+_r21_runbook_path = _r16_os.path.join(_r16_os.path.dirname(__file__), "..", "deploy", "prometheus", "RUNBOOK.md")
+with open(_r21_alerts_path) as _r21_af:
+    _r21_alerts_data = _r21_yaml.safe_load(_r21_af)
+_r21_alert_names = []
+for _r21_grp in _r21_alerts_data.get("groups", []):
+    for _r21_rule in _r21_grp.get("rules", []):
+        if "alert" in _r21_rule:
+            _r21_alert_names.append(_r21_rule["alert"])
+_r21_runbook_content = open(_r21_runbook_path).read()
+_r21_runbook_missing = [a for a in _r21_alert_names if a not in _r21_runbook_content]
+check("r21_alerts_runbook_sync",
+      len(_r21_runbook_missing) == 0,
+      f"All alerts in alerts.yml must be documented in RUNBOOK.md (missing: {_r21_runbook_missing})")
+# Reverse check: Runbook should not document phantom alerts
+_r21_known_alerts_set = set(_r21_alert_names)
+import re as _r21_re
+_r21_runbook_alert_refs = set(_r21_re.findall(r"## \d+\.\s+(Nanobot\w+)", _r21_runbook_content))
+_r21_phantom = _r21_runbook_alert_refs - _r21_known_alerts_set
+check("r21_runbook_no_phantom_alerts",
+      len(_r21_phantom) == 0,
+      f"RUNBOOK must not document alerts absent from alerts.yml (phantom: {_r21_phantom})")
+
+print("\n  -- Audit R21: Dashboard PromQL ↔ /api/metrics metric names --")
+_r21_dash_path = _r16_os.path.join(_r16_os.path.dirname(__file__), "..", "deploy", "grafana", "nanobot-dashboard.json")
+with open(_r21_dash_path) as _r21_df:
+    _r21_dash_data = json.load(_r21_df)
+# Extract all metric names referenced in dashboard expressions
+_r21_metric_re = _r21_re.compile(r'\b(nanobot_\w+)')
+_r21_dash_metrics = set()
+for _r21_panel in _r21_dash_data.get("panels", []):
+    for _r21_target in _r21_panel.get("targets", []):
+        _r21_expr = _r21_target.get("expr", "")
+        _r21_dash_metrics.update(_r21_metric_re.findall(_r21_expr))
+check("r21_dashboard_has_metric_refs",
+      len(_r21_dash_metrics) > 0,
+      "Dashboard must reference at least one nanobot_* metric")
+# Extract all metric names from prometheus_metrics() source
+_r21_prom_src = _ct_inspect.getsource(
+    __import__("server_final", fromlist=["prometheus_metrics"]).prometheus_metrics)
+_r21_exported_metrics = set(_r21_metric_re.findall(_r21_prom_src))
+_r21_dash_only = _r21_dash_metrics - _r21_exported_metrics
+check("r21_dashboard_metrics_valid",
+      len(_r21_dash_only) == 0,
+      f"All dashboard metrics must exist in /api/metrics export (unknown: {_r21_dash_only})")
+# Also verify alerts.yml metric names are exported
+_r21_alerts_metrics = set()
+for _r21_grp in _r21_alerts_data.get("groups", []):
+    for _r21_rule in _r21_grp.get("rules", []):
+        _r21_alerts_metrics.update(_r21_metric_re.findall(_r21_rule.get("expr", "")))
+_r21_alerts_only = _r21_alerts_metrics - _r21_exported_metrics
+check("r21_alerts_metrics_valid",
+      len(_r21_alerts_only) == 0,
+      f"All alerts.yml metrics must exist in /api/metrics export (unknown: {_r21_alerts_only})")
+
 # ======================================================================
 # Summary
 # ======================================================================
