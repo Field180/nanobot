@@ -1,0 +1,35 @@
+# Nanobot Audit CI — runs on every push and PR to enforce audit tests.
+# This is the "unbypassable gate" that prevents silent audit regressions.
+name: Audit Gate
+
+on:
+  push:
+    branches: [master, main]
+  pull_request:
+    branches: [master, main]
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install pyyaml fastapi uvicorn litellm rich prompt_toolkit
+          pip install -r requirements.txt 2>/dev/null || true
+
+      - name: Run audit tests (hard-fail)
+        run: python tests/test_audit_fixes.py
+
+      - name: Run unit tests
+        run: python -m unittest discover -s tests -p "test_*.py" 2>&1 | tail -5
+
+      - name: Safety check
+        run: make safety-check
