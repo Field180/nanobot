@@ -1,0 +1,689 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Nanobot 权限审批 Demo</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+            min-height: 100vh;
+            color: #e0e0e0;
+            padding: 20px;
+        }
+        
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+        }
+        
+        h1 {
+            text-align: center;
+            margin-bottom: 30px;
+            color: #00d9ff;
+        }
+        
+        .card {
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 12px;
+            padding: 20px;
+            margin-bottom: 20px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+        
+        .card h2 {
+            color: #00d9ff;
+            margin-bottom: 15px;
+            font-size: 18px;
+        }
+        
+        .status {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 10px 15px;
+            border-radius: 8px;
+            margin-bottom: 15px;
+        }
+        
+        .status.connected {
+            background: rgba(0, 255, 136, 0.1);
+            border: 1px solid rgba(0, 255, 136, 0.3);
+        }
+        
+        .status.disconnected {
+            background: rgba(255, 68, 68, 0.1);
+            border: 1px solid rgba(255, 68, 68, 0.3);
+        }
+        
+        .status-dot {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            animation: pulse 2s infinite;
+        }
+        
+        .status.connected .status-dot {
+            background: #00ff88;
+        }
+        
+        .status.disconnected .status-dot {
+            background: #ff4444;
+        }
+        
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+        
+        .approval-request {
+            background: rgba(0, 217, 255, 0.1);
+            border: 1px solid rgba(0, 217, 255, 0.3);
+            border-radius: 12px;
+            padding: 20px;
+            margin-bottom: 15px;
+            display: none;
+        }
+        
+        .approval-request.active {
+            display: block;
+            animation: slideIn 0.3s ease;
+        }
+        
+        @keyframes slideIn {
+            from {
+                opacity: 0;
+                transform: translateY(-10px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+        
+        .approval-request h3 {
+            color: #00d9ff;
+            margin-bottom: 10px;
+        }
+        
+        .approval-details {
+            background: rgba(0, 0, 0, 0.2);
+            border-radius: 8px;
+            padding: 15px;
+            margin: 15px 0;
+            font-family: monospace;
+            font-size: 14px;
+            overflow-x: auto;
+        }
+        
+        .approval-actions {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+        }
+        
+        .btn {
+            padding: 12px 24px;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 600;
+            transition: all 0.2s;
+            flex: 1;
+            min-width: 120px;
+        }
+        
+        .btn-primary {
+            background: linear-gradient(135deg, #00d9ff, #00ff88);
+            color: #1a1a2e;
+        }
+        
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 15px rgba(0, 217, 255, 0.4);
+        }
+        
+        .btn-danger {
+            background: linear-gradient(135deg, #ff4444, #ff6b6b);
+            color: white;
+        }
+        
+        .btn-danger:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 15px rgba(255, 68, 68, 0.4);
+        }
+        
+        .btn-secondary {
+            background: rgba(255, 255, 255, 0.1);
+            color: #e0e0e0;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+        }
+        
+        .btn-secondary:hover {
+            background: rgba(255, 255, 255, 0.2);
+        }
+        
+        .history {
+            max-height: 300px;
+            overflow-y: auto;
+        }
+        
+        .history-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 10px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+        }
+        
+        .history-item:last-child {
+            border-bottom: none;
+        }
+        
+        .history-item .decision {
+            padding: 4px 12px;
+            border-radius: 20px;
+            font-size: 12px;
+            font-weight: 600;
+        }
+        
+        .history-item .decision.allow {
+            background: rgba(0, 255, 136, 0.2);
+            color: #00ff88;
+        }
+        
+        .history-item .decision.deny {
+            background: rgba(255, 68, 68, 0.2);
+            color: #ff4444;
+        }
+        
+        .history-item .decision.timeout {
+            background: rgba(255, 193, 7, 0.2);
+            color: #ffc107;
+        }
+        
+        .config-form {
+            display: grid;
+            gap: 15px;
+        }
+        
+        .form-group {
+            display: flex;
+            flex-direction: column;
+            gap: 5px;
+        }
+        
+        .form-group label {
+            font-size: 14px;
+            color: #888;
+        }
+        
+        .form-group input {
+            padding: 10px 15px;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            border-radius: 8px;
+            background: rgba(0, 0, 0, 0.2);
+            color: #e0e0e0;
+            font-size: 14px;
+        }
+        
+        .form-group input:focus {
+            outline: none;
+            border-color: #00d9ff;
+        }
+        
+        .code-block {
+            background: #0d1117;
+            border-radius: 8px;
+            padding: 15px;
+            overflow-x: auto;
+            font-family: 'Fira Code', monospace;
+            font-size: 13px;
+            line-height: 1.5;
+        }
+        
+        .code-block .comment {
+            color: #6a737d;
+        }
+        
+        .code-block .keyword {
+            color: #ff7b72;
+        }
+        
+        .code-block .string {
+            color: #a5d6ff;
+        }
+        
+        .code-block .function {
+            color: #d2a8ff;
+        }
+        
+        .tabs {
+            display: flex;
+            gap: 5px;
+            margin-bottom: 15px;
+        }
+        
+        .tab {
+            padding: 10px 20px;
+            background: rgba(255, 255, 255, 0.05);
+            border: none;
+            border-radius: 8px 8px 0 0;
+            color: #888;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        
+        .tab.active {
+            background: rgba(0, 217, 255, 0.1);
+            color: #00d9ff;
+        }
+        
+        .tab-content {
+            display: none;
+        }
+        
+        .tab-content.active {
+            display: block;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🤖 Nanobot 权限审批 Demo</h1>
+        
+        <!-- 连接状态 -->
+        <div class="card">
+            <h2>📡 WebSocket 连接</h2>
+            <div id="connectionStatus" class="status disconnected">
+                <div class="status-dot"></div>
+                <span id="statusText">未连接</span>
+            </div>
+            <div class="config-form">
+                <div class="form-group">
+                    <label>服务器地址</label>
+                    <input type="text" id="serverUrl" value="ws://localhost:8080" placeholder="ws://localhost:8080">
+                </div>
+                <div class="form-group">
+                    <label>会话 ID</label>
+                    <input type="text" id="sessionId" placeholder="可选，留空自动生成">
+                </div>
+                <button class="btn btn-primary" onclick="connect()">连接</button>
+            </div>
+        </div>
+        
+        <!-- 审批请求 -->
+        <div class="card">
+            <h2>🔔 待审批请求</h2>
+            <div id="approvalRequest" class="approval-request">
+                <h3 id="requestTitle">工具执行请求</h3>
+                <p id="requestDescription"></p>
+                <div class="approval-details">
+                    <pre id="requestDetails"></pre>
+                </div>
+                <div class="approval-actions">
+                    <button class="btn btn-primary" onclick="approve('allow_once')">✓ 允许一次</button>
+                    <button class="btn btn-secondary" onclick="approve('allow_session')">📋 本次会话允许</button>
+                    <button class="btn btn-secondary" onclick="approve('allow_always')">💾 永久允许</button>
+                    <button class="btn btn-danger" onclick="deny()">✗ 拒绝</button>
+                </div>
+                <p style="margin-top: 10px; font-size: 12px; color: #888;">
+                    ⏱ 剩余时间: <span id="timeout">60</span> 秒
+                </p>
+            </div>
+            <div id="noRequests" style="text-align: center; color: #888; padding: 20px;">
+                暂无待审批请求
+            </div>
+        </div>
+        
+        <!-- 历史记录 -->
+        <div class="card">
+            <h2>📜 审批历史</h2>
+            <div id="history" class="history">
+                <div style="text-align: center; color: #888; padding: 20px;">
+                    暂无历史记录
+                </div>
+            </div>
+        </div>
+        
+        <!-- 集成代码示例 -->
+        <div class="card">
+            <h2>💻 集成代码示例</h2>
+            <div class="tabs">
+                <button class="tab active" onclick="showTab('js')">JavaScript</button>
+                <button class="tab" onclick="showTab('python')">Python</button>
+                <button class="tab" onclick="showTab('react')">React</button>
+            </div>
+            
+            <div id="tab-js" class="tab-content active">
+                <div class="code-block">
+<span class="comment">// 连接权限审批 WebSocket</span>
+<span class="keyword">const</span> sessionId = <span class="string">'your-session-id'</span>;
+<span class="keyword">const</span> ws = <span class="keyword">new</span> <span class="function">WebSocket</span>(
+    <span class="string">`ws://localhost:8080/ws/permission/${sessionId}`</span>
+);
+
+ws.<span class="function">onopen</span> = () => {
+    console.<span class="function">log</span>(<span class="string">'已连接'</span>);
+    <span class="comment">// 订阅审批请求</span>
+    ws.<span class="function">send</span>(JSON.<span class="function">stringify</span>({
+        type: <span class="string">'subscribe'</span>,
+        session_id: sessionId
+    }));
+};
+
+ws.<span class="function">onmessage</span> = (event) => {
+    <span class="keyword">const</span> data = JSON.<span class="function">parse</span>(event.data);
+    
+    <span class="keyword">if</span> (data.type === <span class="string">'permission_request'</span>) {
+        <span class="comment">// 显示审批请求</span>
+        <span class="function">showApprovalDialog</span>(data);
+    }
+};
+
+<span class="comment">// 发送审批决策</span>
+<span class="keyword">function</span> <span class="function">sendDecision</span>(requestId, decision) {
+    ws.<span class="function">send</span>(JSON.<span class="function">stringify</span>({
+        type: <span class="string">'decision'</span>,
+        request_id: requestId,
+        decision: decision  <span class="comment">// 'allow_once', 'allow_session', 'deny'</span>
+    }));
+}
+                </div>
+            </div>
+            
+            <div id="tab-python" class="tab-content">
+                <div class="code-block">
+<span class="comment"># Python 客户端示例</span>
+<span class="keyword">import</span> asyncio
+<span class="keyword">import</span> websockets
+<span class="keyword">import</span> json
+
+<span class="keyword">async def</span> <span class="function">approval_client</span>(session_id):
+    uri = <span class="string">f"ws://localhost:8080/ws/permission/{session_id}"</span>
+    
+    <span class="keyword">async with</span> websockets.<span class="function">connect</span>(uri) <span class="keyword">as</span> ws:
+        <span class="comment"># 订阅</span>
+        <span class="keyword">await</span> ws.<span class="function">send</span>(json.<span class="function">dumps</span>({
+            <span class="string">'type'</span>: <span class="string">'subscribe'</span>,
+            <span class="string">'session_id'</span>: session_id
+        }))
+        
+        <span class="comment"># 监听审批请求</span>
+        <span class="keyword">async for</span> message <span class="keyword">in</span> ws:
+            data = json.<span class="function">loads</span>(message)
+            
+            <span class="keyword">if</span> data[<span class="string">'type'</span>] == <span class="string">'permission_request'</span>:
+                <span class="comment"># 显示审批界面</span>
+                decision = <span class="keyword">await</span> <span class="function">get_user_decision</span>(data)
+                
+                <span class="comment"># 发送决策</span>
+                <span class="keyword">await</span> ws.<span class="function">send</span>(json.<span class="function">dumps</span>({
+                    <span class="string">'type'</span>: <span class="string">'decision'</span>,
+                    <span class="string">'request_id'</span>: data[<span class="string">'request_id'</span>],
+                    <span class="string">'decision'</span>: decision
+                }))
+
+<span class="comment"># 运行</span>
+asyncio.<span class="function">run</span>(<span class="function">approval_client</span>(<span class="string">'my-session'</span>))
+                </div>
+            </div>
+            
+            <div id="tab-react" class="tab-content">
+                <div class="code-block">
+<span class="comment">// React Hook 示例</span>
+<span class="keyword">import</span> { useState, useEffect } <span class="keyword">from</span> <span class="string">'react'</span>;
+
+<span class="keyword">function</span> <span class="function">useApprovalWebSocket</span>(sessionId) {
+    <span class="keyword">const</span> [ws, setWs] = <span class="function">useState</span>(null);
+    <span class="keyword">const</span> [request, setRequest] = <span class="function">useState</span>(null);
+    
+    <span class="function">useEffect</span>(() => {
+        <span class="keyword">const</span> socket = <span class="keyword">new</span> <span class="function">WebSocket</span>(
+            <span class="string">`ws://localhost:8080/ws/permission/${sessionId}`</span>
+        );
+        
+        socket.<span class="function">onmessage</span> = (e) => {
+            <span class="keyword">const</span> data = JSON.<span class="function">parse</span>(e.data);
+            <span class="keyword">if</span> (data.type === <span class="string">'permission_request'</span>) {
+                <span class="function">setRequest</span>(data);
+            }
+        };
+        
+        <span class="function">setWs</span>(socket);
+        <span class="keyword">return</span> () => socket.<span class="function">close</span>();
+    }, [sessionId]);
+    
+    <span class="keyword">const</span> <span class="function">decide</span> = (decision) => {
+        ws?.<span class="function">send</span>(JSON.<span class="function">stringify</span>({
+            type: <span class="string">'decision'</span>,
+            request_id: request.request_id,
+            decision
+        }));
+        <span class="function">setRequest</span>(null);
+    };
+    
+    <span class="keyword">return</span> { request, decide };
+}
+
+<span class="comment">// 使用示例</span>
+<span class="keyword">function</span> <span class="function">ApprovalDialog</span>() {
+    <span class="keyword">const</span> { request, decide } = <span class="function">useApprovalWebSocket</span>(<span class="string">'session-123'</span>);
+    
+    <span class="keyword">if</span> (!request) <span class="keyword">return</span> null;
+    
+    <span class="keyword">return</span> (
+        &lt;div className="approval-dialog"&gt;
+            &lt;h3&gt;{request.title}&lt;/h3&gt;
+            &lt;button onClick={() => <span class="function">decide</span>(<span class="string">'allow_once'</span>)}&gt;允许&lt;/button&gt;
+            &lt;button onClick={() => <span class="function">decide</span>(<span class="string">'deny'</span>)}&gt;拒绝&lt;/button&gt;
+        &lt;/div&gt;
+    );
+}
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <script>
+        let ws = null;
+        let currentRequest = null;
+        let timeoutInterval = null;
+        let history = [];
+        
+        function connect() {
+            const serverUrl = document.getElementById('serverUrl').value;
+            const sessionId = document.getElementById('sessionId').value || 'demo-' + Date.now();
+            
+            if (ws) {
+                ws.close();
+            }
+            
+            ws = new WebSocket(`${serverUrl}/ws/permission/${sessionId}`);
+            
+            ws.onopen = () => {
+                updateConnectionStatus(true);
+                // 订阅审批请求
+                ws.send(JSON.stringify({
+                    type: 'subscribe',
+                    session_id: sessionId
+                }));
+            };
+            
+            ws.onclose = () => {
+                updateConnectionStatus(false);
+            };
+            
+            ws.onerror = (error) => {
+                console.error('WebSocket error:', error);
+                updateConnectionStatus(false);
+            };
+            
+            ws.onmessage = (event) => {
+                const data = JSON.parse(event.data);
+                handleMessage(data);
+            };
+        }
+        
+        function updateConnectionStatus(connected) {
+            const status = document.getElementById('connectionStatus');
+            const statusText = document.getElementById('statusText');
+            
+            if (connected) {
+                status.className = 'status connected';
+                statusText.textContent = '已连接';
+            } else {
+                status.className = 'status disconnected';
+                statusText.textContent = '未连接';
+            }
+        }
+        
+        function handleMessage(data) {
+            switch (data.type) {
+                case 'permission_request':
+                    showApprovalRequest(data);
+                    break;
+                case 'decision_ack':
+                    addToHistory(currentRequest, data.decision);
+                    hideApprovalRequest();
+                    break;
+                case 'error':
+                    alert('错误: ' + data.message);
+                    break;
+            }
+        }
+        
+        function showApprovalRequest(data) {
+            currentRequest = data;
+            
+            document.getElementById('noRequests').style.display = 'none';
+            document.getElementById('approvalRequest').classList.add('active');
+            
+            document.getElementById('requestTitle').textContent = 
+                `工具执行请求: ${data.tool_name || '未知工具'}`;
+            document.getElementById('requestDescription').textContent = 
+                data.description || '模型请求执行操作';
+            document.getElementById('requestDetails').textContent = 
+                JSON.stringify(data.params || data.details || {}, null, 2);
+            
+            // 启动超时倒计时
+            let timeout = data.timeout || 60;
+            document.getElementById('timeout').textContent = timeout;
+            
+            if (timeoutInterval) clearInterval(timeoutInterval);
+            timeoutInterval = setInterval(() => {
+                timeout--;
+                document.getElementById('timeout').textContent = timeout;
+                if (timeout <= 0) {
+                    clearInterval(timeoutInterval);
+                    addToHistory(currentRequest, 'timeout');
+                    hideApprovalRequest();
+                }
+            }, 1000);
+        }
+        
+        function hideApprovalRequest() {
+            document.getElementById('approvalRequest').classList.remove('active');
+            document.getElementById('noRequests').style.display = 'block';
+            currentRequest = null;
+            if (timeoutInterval) {
+                clearInterval(timeoutInterval);
+                timeoutInterval = null;
+            }
+        }
+        
+        function approve(decision) {
+            if (!currentRequest || !ws) return;
+            
+            ws.send(JSON.stringify({
+                type: 'decision',
+                request_id: currentRequest.request_id,
+                decision: decision
+            }));
+        }
+        
+        function deny() {
+            if (!currentRequest || !ws) return;
+            
+            ws.send(JSON.stringify({
+                type: 'decision',
+                request_id: currentRequest.request_id,
+                decision: 'deny'
+            }));
+        }
+        
+        function addToHistory(request, decision) {
+            if (!request) return;
+            
+            history.unshift({
+                tool: request.tool_name,
+                decision: decision,
+                time: new Date().toLocaleTimeString()
+            });
+            
+            // 限制历史记录数量
+            if (history.length > 20) history.pop();
+            
+            renderHistory();
+        }
+        
+        function renderHistory() {
+            const container = document.getElementById('history');
+            
+            if (history.length === 0) {
+                container.innerHTML = `
+                    <div style="text-align: center; color: #888; padding: 20px;">
+                        暂无历史记录
+                    </div>
+                `;
+                return;
+            }
+            
+            container.innerHTML = history.map(item => `
+                <div class="history-item">
+                    <div>
+                        <strong>${item.tool}</strong>
+                        <span style="color: #888; font-size: 12px; margin-left: 10px;">
+                            ${item.time}
+                        </span>
+                    </div>
+                    <span class="decision ${item.decision.split('_')[0]}">
+                        ${item.decision === 'allow_once' ? '允许一次' :
+                          item.decision === 'allow_session' ? '会话允许' :
+                          item.decision === 'allow_always' ? '永久允许' :
+                          item.decision === 'deny' ? '拒绝' : '超时'}
+                    </span>
+                </div>
+            `).join('');
+        }
+        
+        function showTab(tabId) {
+            // 隐藏所有tab内容
+            document.querySelectorAll('.tab-content').forEach(el => {
+                el.classList.remove('active');
+            });
+            // 移除所有tab激活状态
+            document.querySelectorAll('.tab').forEach(el => {
+                el.classList.remove('active');
+            });
+            // 显示选中的tab
+            document.getElementById('tab-' + tabId).classList.add('active');
+            event.target.classList.add('active');
+        }
+        
+        // 页面加载时自动连接
+        document.addEventListener('DOMContentLoaded', () => {
+            // 可以在这里自动连接
+            // connect();
+        });
+    </script>
+</body>
+</html>

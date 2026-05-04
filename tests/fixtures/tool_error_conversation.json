@@ -1,0 +1,22 @@
+{
+  "description": "Error scenario: model calls file_list on nonexistent path, gets error, then recovers with text response.",
+  "user_message": "List files in /nonexistent/path/that/does/not/exist",
+  "turns": [
+    {
+      "assistant_text": "I'll check that directory.",
+      "tool_calls": [
+        {
+          "id": "call_err_001",
+          "name": "file_list",
+          "arguments": {"path": "/nonexistent/path/that/does/not/exist"}
+        }
+      ]
+    },
+    {
+      "assistant_text": "The path does not exist. Please provide a valid directory path.",
+      "tool_calls": []
+    }
+  ],
+  "expected_event_types": ["turn_start", "generation_start", "chunk", "tool_start", "tool_result", "agentic_done"],
+  "expected_final_text_contains": "does not exist"
+}

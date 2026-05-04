@@ -1,0 +1,9 @@
+# Nanobot Web UI dependencies
+# Core (already installed in project venv)
+fastapi>=0.100.0
+uvicorn>=0.20.0
+litellm>=1.0.0
+
+# P6: Terminal UI
+rich>=13.0
+prompt_toolkit>=3.0

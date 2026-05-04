@@ -1,0 +1,22 @@
+{
+  "description": "Minimal replay fixture: user asks to list files, model calls file_list (real execution), then summarizes.",
+  "user_message": "List files in current directory",
+  "turns": [
+    {
+      "assistant_text": "I'll list the files for you.",
+      "tool_calls": [
+        {
+          "id": "call_001",
+          "name": "file_list",
+          "arguments": {"path": "."}
+        }
+      ]
+    },
+    {
+      "assistant_text": "Here are the files in the current directory.",
+      "tool_calls": []
+    }
+  ],
+  "expected_event_types": ["turn_start", "generation_start", "chunk", "tool_start", "tool_result", "agentic_done"],
+  "expected_final_text_contains": "files"
+}

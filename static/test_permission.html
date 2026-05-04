@@ -1,0 +1,753 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>权限管理系统测试</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+            background: #0f0f1a;
+            color: #e2e8f0;
+            min-height: 100vh;
+            padding: 20px;
+        }
+        .container { max-width: 1200px; margin: 0 auto; }
+        h1 { color: #10b981; margin-bottom: 20px; }
+        h2 { color: #6366f1; margin: 20px 0 10px; font-size: 18px; }
+        .test-section {
+            background: #1a1a2e;
+            border-radius: 12px;
+            padding: 20px;
+            margin: 15px 0;
+            border: 1px solid #334155;
+        }
+        .test-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 15px; }
+        .test-card {
+            background: #16213e;
+            border-radius: 8px;
+            padding: 15px;
+            border: 1px solid #334155;
+        }
+        .test-card h3 { color: #f1f5f9; margin-bottom: 10px; font-size: 14px; }
+        button {
+            background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%);
+            color: white;
+            border: none;
+            padding: 10px 16px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 13px;
+            margin: 4px;
+            transition: all 0.2s;
+        }
+        button:hover { transform: translateY(-1px); opacity: 0.9; }
+        button.danger { background: linear-gradient(135deg, #ef4444 0%, #f97316 100%); }
+        button.success { background: linear-gradient(135deg, #10b981 0%, #059669 100%); }
+        button:disabled { background: #6b7280; cursor: not-allowed; transform: none; }
+        .result {
+            background: #0f0f23;
+            border-radius: 6px;
+            padding: 12px;
+            margin-top: 10px;
+            font-family: 'Consolas', monospace;
+            font-size: 12px;
+            max-height: 200px;
+            overflow-y: auto;
+        }
+        .result pre { white-space: pre-wrap; word-break: break-all; }
+        .log-entry { margin: 3px 0; padding: 4px 8px; border-radius: 4px; }
+        .log-info { background: rgba(59, 130, 246, 0.2); color: #93c5fd; }
+        .log-success { background: rgba(16, 185, 129, 0.2); color: #6ee7b7; }
+        .log-error { background: rgba(239, 68, 68, 0.2); color: #fca5a5; }
+        .log-warn { background: rgba(251, 191, 36, 0.2); color: #fcd34d; }
+        .status-badge {
+            display: inline-block;
+            padding: 2px 8px;
+            border-radius: 10px;
+            font-size: 11px;
+            margin-left: 8px;
+        }
+        .status-pass { background: rgba(16, 185, 129, 0.3); color: #6ee7b7; }
+        .status-fail { background: rgba(239, 68, 68, 0.3); color: #fca5a5; }
+        .status-pending { background: rgba(251, 191, 36, 0.3); color: #fcd34d; }
+        .stats { display: flex; gap: 20px; margin: 15px 0; }
+        .stat-item { text-align: center; }
+        .stat-num { font-size: 24px; font-weight: bold; color: #6366f1; }
+        .stat-label { font-size: 12px; color: #94a3b8; }
+        #toastContainer {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            z-index: 10000;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            max-width: 400px;
+        }
+        .toast {
+            background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%);
+            border: 1px solid #334155;
+            border-radius: 12px;
+            padding: 16px;
+            animation: slideIn 0.3s ease-out;
+        }
+        @keyframes slideIn {
+            from { opacity: 0; transform: translateX(100px); }
+            to { opacity: 1; transform: translateX(0); }
+        }
+        @keyframes slideOut {
+            from { opacity: 1; transform: translateX(0); }
+            to { opacity: 0; transform: translateX(100px); }
+        }
+        .toast.hiding { animation: slideOut 0.3s ease-in forwards; }
+        .toast-header { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
+        .toast-icon { width: 36px; height: 36px; border-radius: 8px; display: flex; align-items: center; justify-content: center; }
+        .toast-icon.internet { background: linear-gradient(135deg, #3b82f6, #1d4ed8); }
+        .toast-icon.file { background: linear-gradient(135deg, #10b981, #059669); }
+        .toast-icon.code { background: linear-gradient(135deg, #8b5cf6, #6d28d9); }
+        .toast-icon.danger { background: linear-gradient(135deg, #ef4444, #dc2626); }
+        .toast-title { font-weight: 600; color: #f1f5f9; }
+        .toast-details { font-size: 12px; color: #94a3b8; background: rgba(0,0,0,0.3); padding: 8px; border-radius: 4px; margin: 10px 0; }
+        .toast-actions { display: flex; gap: 6px; }
+        .toast-btn { flex: 1; padding: 8px; border: none; border-radius: 4px; font-size: 12px; cursor: pointer; }
+        .toast-btn.deny { background: rgba(239, 68, 68, 0.2); color: #fca5a5; }
+        .toast-btn.allow { background: rgba(16, 185, 129, 0.2); color: #6ee7b7; }
+        .toast-btn:hover { opacity: 0.8; }
+        .progress-bar { height: 3px; background: #334155; border-radius: 2px; margin-top: 10px; overflow: hidden; }
+        .progress-fill { height: 100%; background: linear-gradient(90deg, #3b82f6, #8b5cf6); transition: width 0.1s linear; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🧪 权限管理系统测试</h1>
+        
+        <div class="stats">
+            <div class="stat-item">
+                <div class="stat-num" id="passCount">0</div>
+                <div class="stat-label">通过</div>
+            </div>
+            <div class="stat-item">
+                <div class="stat-num" id="failCount">0</div>
+                <div class="stat-label">失败</div>
+            </div>
+            <div class="stat-item">
+                <div class="stat-num" id="totalCount">0</div>
+                <div class="stat-label">总计</div>
+            </div>
+        </div>
+
+        <div class="test-section">
+            <h2>📡 API 连接测试</h2>
+            <div class="test-grid">
+                <div class="test-card">
+                    <h3>基础连接</h3>
+                    <button onclick="testAPIConnection()">测试 API 连接</button>
+                    <button onclick="testWebSocket()">测试 WebSocket</button>
+                    <div class="result" id="connectionResult"></div>
+                </div>
+                <div class="test-card">
+                    <h3>权限 API</h3>
+                    <button onclick="testPermissionAPIs()">测试权限 API</button>
+                    <div class="result" id="permissionAPIResult"></div>
+                </div>
+            </div>
+        </div>
+
+        <div class="test-section">
+            <h2>🔔 弹窗通知测试</h2>
+            <div class="test-grid">
+                <div class="test-card">
+                    <h3>不同类型权限请求</h3>
+                    <button onclick="createTestRequest('internet')">🌐 互联网访问</button>
+                    <button onclick="createTestRequest('file_read')">📄 读取文件</button>
+                    <button onclick="createTestRequest('code_exec')">💻 执行代码</button>
+                    <button onclick="createTestRequest('system_cmd')">⚙️ 系统命令</button>
+                    <button onclick="createTestRequest('dangerous')">⚠️ 危险操作</button>
+                    <div class="result" id="toastTestResult"></div>
+                </div>
+                <div class="test-card">
+                    <h3>弹窗交互</h3>
+                    <button onclick="testToastDecision('allow_once')">测试"本次允许"</button>
+                    <button onclick="testToastDecision('allow_session')">测试"会话允许"</button>
+                    <button onclick="testToastDecision('allow_always')">测试"始终允许"</button>
+                    <button onclick="testToastDecision('deny')">测试"拒绝"</button>
+                    <div class="result" id="toastDecisionResult"></div>
+                </div>
+            </div>
+        </div>
+
+        <div class="test-section">
+            <h2>📋 规则管理测试</h2>
+            <div class="test-grid">
+                <div class="test-card">
+                    <h3>权限规则 CRUD</h3>
+                    <button onclick="testAddRule()">添加测试规则</button>
+                    <button onclick="testGetRules()">获取规则列表</button>
+                    <button onclick="testDeleteRule()">删除测试规则</button>
+                    <button onclick="testClearAllRules()">清除所有规则</button>
+                    <div class="result" id="rulesResult"></div>
+                </div>
+                <div class="test-card">
+                    <h3>自动授权检查</h3>
+                    <button onclick="testAutoPermission()">测试自动授权</button>
+                    <div class="result" id="autoPermResult"></div>
+                </div>
+            </div>
+        </div>
+
+        <div class="test-section">
+            <h2>⏳ 待处理请求测试</h2>
+            <div class="test-grid">
+                <div class="test-card">
+                    <h3>请求队列</h3>
+                    <button onclick="createMultipleRequests(3)">创建3个请求</button>
+                    <button onclick="getPendingRequests()">获取待处理列表</button>
+                    <button onclick="approveAllPending()">批准所有</button>
+                    <button onclick="denyAllPending()">拒绝所有</button>
+                    <div class="result" id="pendingResult"></div>
+                </div>
+                <div class="test-card">
+                    <h3>超时测试</h3>
+                    <button onclick="testTimeout()">测试超时自动拒绝</button>
+                    <div class="result" id="timeoutResult"></div>
+                </div>
+            </div>
+        </div>
+
+        <div class="test-section">
+            <h2>🔄 综合测试</h2>
+            <div class="test-grid">
+                <div class="test-card">
+                    <h3>自动化测试套件</h3>
+                    <button onclick="runAllTests()" class="success">运行所有测试</button>
+                    <button onclick="stressTest()" class="danger">压力测试 (10请求)</button>
+                    <div class="result" id="allTestsResult"></div>
+                </div>
+                <div class="test-card">
+                    <h3>测试日志</h3>
+                    <button onclick="clearLogs()">清空日志</button>
+                    <div class="result" id="testLog" style="max-height: 300px;"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Toast 容器 -->
+    <div id="toastContainer"></div>
+
+    <script>
+        // 配置
+        const API_URL = 'http://localhost:8080';
+        let testResults = { pass: 0, fail: 0, total: 0 };
+        let wsConnection = null;
+        let currentRequestId = null;
+        let testRules = [];
+
+        // 日志函数
+        function log(message, type = 'info') {
+            const logEl = document.getElementById('testLog');
+            const entry = document.createElement('div');
+            entry.className = `log-entry log-${type}`;
+            entry.textContent = `[${new Date().toLocaleTimeString()}] ${message}`;
+            logEl.appendChild(entry);
+            logEl.scrollTop = logEl.scrollHeight;
+        }
+
+        function clearLogs() {
+            document.getElementById('testLog').innerHTML = '';
+        }
+
+        // 更新统计
+        function updateStats(passed) {
+            testResults.total++;
+            if (passed) testResults.pass++;
+            else testResults.fail++;
+            document.getElementById('passCount').textContent = testResults.pass;
+            document.getElementById('failCount').textContent = testResults.fail;
+            document.getElementById('totalCount').textContent = testResults.total;
+        }
+
+        // 显示结果
+        function showResult(elementId, data, passed = null) {
+            const el = document.getElementById(elementId);
+            const status = passed === null ? '' : 
+                `<span class="status-badge ${passed ? 'status-pass' : 'status-fail'}">${passed ? 'PASS' : 'FAIL'}</span>`;
+            el.innerHTML = `<pre>${JSON.stringify(data, null, 2)}</pre>${status}`;
+        }
+
+        // ========== API 连接测试 ==========
+
+        async function testAPIConnection() {
+            log('测试 API 连接...', 'info');
+            try {
+                const response = await fetch(`${API_URL}/api/status`);
+                const data = await response.json();
+                const passed = response.ok && data.status === 'ok';
+                log(`API 连接: ${passed ? '成功' : '失败'}`, passed ? 'success' : 'error');
+                showResult('connectionResult', data, passed);
+                updateStats(passed);
+                return passed;
+            } catch (e) {
+                log(`API 连接失败: ${e.message}`, 'error');
+                showResult('connectionResult', { error: e.message }, false);
+                updateStats(false);
+                return false;
+            }
+        }
+
+        async function testWebSocket() {
+            log('测试 WebSocket 连接...', 'info');
+            return new Promise((resolve) => {
+                try {
+                    const wsUrl = `${location.protocol === 'https:' ? 'wss:' : 'ws:'}//${location.host}/ws/permission`;
+                    wsConnection = new WebSocket(wsUrl);
+                    
+                    wsConnection.onopen = () => {
+                        log('WebSocket 连接成功', 'success');
+                        wsConnection.send(JSON.stringify({ action: 'subscribe', session_id: 'test_session' }));
+                        showResult('connectionResult', { websocket: 'connected' }, true);
+                        updateStats(true);
+                        resolve(true);
+                    };
+                    
+                    wsConnection.onerror = (e) => {
+                        log('WebSocket 错误', 'error');
+                        showResult('connectionResult', { websocket: 'error' }, false);
+                        updateStats(false);
+                        resolve(false);
+                    };
+                    
+                    wsConnection.onclose = () => {
+                        log('WebSocket 已关闭', 'warn');
+                    };
+                    
+                    setTimeout(() => {
+                        if (wsConnection.readyState !== WebSocket.OPEN) {
+                            log('WebSocket 连接超时', 'error');
+                            resolve(false);
+                        }
+                    }, 5000);
+                } catch (e) {
+                    log(`WebSocket 失败: ${e.message}`, 'error');
+                    showResult('connectionResult', { error: e.message }, false);
+                    updateStats(false);
+                    resolve(false);
+                }
+            });
+        }
+
+        async function testPermissionAPIs() {
+            log('测试权限 API...', 'info');
+            const results = [];
+            
+            // 测试获取规则
+            try {
+                const rulesRes = await fetch(`${API_URL}/api/permission/rules`);
+                const rulesData = await rulesRes.json();
+                results.push({ endpoint: '/api/permission/rules', success: rulesData.success });
+            } catch (e) {
+                results.push({ endpoint: '/api/permission/rules', success: false, error: e.message });
+            }
+            
+            // 测试获取待处理
+            try {
+                const pendingRes = await fetch(`${API_URL}/api/permission/pending`);
+                const pendingData = await pendingRes.json();
+                results.push({ endpoint: '/api/permission/pending', success: pendingData.success });
+            } catch (e) {
+                results.push({ endpoint: '/api/permission/pending', success: false, error: e.message });
+            }
+            
+            const passed = results.every(r => r.success);
+            log(`权限 API 测试: ${passed ? '全部通过' : '部分失败'}`, passed ? 'success' : 'warn');
+            showResult('permissionAPIResult', results, passed);
+            updateStats(passed);
+            return passed;
+        }
+
+        // ========== 弹窗通知测试 ==========
+
+        const PERM_ICONS = {
+            internet: 'fa-globe',
+            file_read: 'fa-file-alt',
+            code_exec: 'fa-code',
+            system_cmd: 'fa-terminal',
+            dangerous: 'fa-exclamation-triangle'
+        };
+
+        const PERM_CLASSES = {
+            internet: 'internet',
+            file_read: 'file',
+            code_exec: 'code',
+            system_cmd: 'danger',
+            dangerous: 'danger'
+        };
+
+        async function createTestRequest(type) {
+            log(`创建 ${type} 类型权限请求...`, 'info');
+            
+            const titles = {
+                internet: '请求访问网页',
+                file_read: '请求读取文件',
+                code_exec: '请求执行代码',
+                system_cmd: '请求执行系统命令',
+                dangerous: '请求执行危险操作'
+            };
+            
+            const details = {
+                internet: 'https://example.com/api/data',
+                file_read: '/home/user/.config/settings.json',
+                code_exec: 'python3 script.py',
+                system_cmd: 'rm -rf /tmp/cache',
+                dangerous: 'DROP TABLE users;'
+            };
+            
+            try {
+                const response = await fetch(`${API_URL}/api/permission/request`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        permission_type: type,
+                        title: titles[type],
+                        description: '测试权限请求',
+                        details: details[type],
+                        session_id: 'test_session',
+                        timeout: 60
+                    })
+                });
+                
+                const data = await response.json();
+                if (data.success) {
+                    currentRequestId = data.request_id;
+                    log(`请求创建成功: ${data.request_id}`, 'success');
+                    showToast({
+                        request_id: data.request_id,
+                        permission_type: type,
+                        title: titles[type],
+                        details: details[type],
+                        timeout: 60
+                    });
+                }
+                showResult('toastTestResult', data, data.success);
+                return data;
+            } catch (e) {
+                log(`创建请求失败: ${e.message}`, 'error');
+                showResult('toastTestResult', { error: e.message }, false);
+                return null;
+            }
+        }
+
+        function showToast(request) {
+            const container = document.getElementById('toastContainer');
+            const icon = PERM_ICONS[request.permission_type] || 'fa-shield';
+            const iconClass = PERM_CLASSES[request.permission_type] || 'internet';
+            
+            const toast = document.createElement('div');
+            toast.className = 'toast';
+            toast.id = `toast-${request.request_id}`;
+            toast.innerHTML = `
+                <div class="toast-header">
+                    <div class="toast-icon ${iconClass}">
+                        <i class="fas ${icon}"></i>
+                    </div>
+                    <div class="toast-title">${request.title}</div>
+                </div>
+                <div class="toast-details">${request.details}</div>
+                <div class="toast-actions">
+                    <button class="toast-btn deny" onclick="handleToastDecision('${request.request_id}', 'deny')">拒绝</button>
+                    <button class="toast-btn allow" onclick="handleToastDecision('${request.request_id}', 'allow_once')">本次</button>
+                    <button class="toast-btn allow" onclick="handleToastDecision('${request.request_id}', 'allow_session')">会话</button>
+                    <button class="toast-btn allow" onclick="handleToastDecision('${request.request_id}', 'allow_always')">始终</button>
+                </div>
+                <div class="progress-bar"><div class="progress-fill" id="progress-${request.request_id}" style="width: 100%"></div></div>
+            `;
+            
+            container.appendChild(toast);
+            
+            // 进度条动画
+            let progress = 100;
+            const interval = setInterval(() => {
+                progress -= (100 / request.timeout);
+                const progressBar = document.getElementById(`progress-${request.request_id}`);
+                if (progressBar) {
+                    progressBar.style.width = `${Math.max(0, progress)}%`;
+                }
+                if (progress <= 0) {
+                    clearInterval(interval);
+                }
+            }, 1000);
+            
+            log(`显示弹窗: ${request.request_id}`, 'info');
+        }
+
+        async function handleToastDecision(requestId, decision) {
+            log(`处理决策: ${requestId} -> ${decision}`, 'info');
+            
+            try {
+                const response = await fetch(`${API_URL}/api/permission/decide`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ request_id: requestId, decision: decision })
+                });
+                
+                const data = await response.json();
+                if (data.success) {
+                    // 移除弹窗
+                    const toast = document.getElementById(`toast-${requestId}`);
+                    if (toast) {
+                        toast.classList.add('hiding');
+                        setTimeout(() => toast.remove(), 300);
+                    }
+                    log(`决策成功: ${decision}`, 'success');
+                }
+                showResult('toastDecisionResult', data, data.success);
+                updateStats(data.success);
+            } catch (e) {
+                log(`决策失败: ${e.message}`, 'error');
+                showResult('toastDecisionResult', { error: e.message }, false);
+                updateStats(false);
+            }
+        }
+
+        async function testToastDecision(decision) {
+            log(`测试决策: ${decision}`, 'info');
+            const request = await createTestRequest('internet');
+            if (request && request.request_id) {
+                await new Promise(r => setTimeout(r, 500));
+                await handleToastDecision(request.request_id, decision);
+            }
+        }
+
+        // ========== 规则管理测试 ==========
+
+        async function testGetRules() {
+            log('获取权限规则...', 'info');
+            try {
+                const response = await fetch(`${API_URL}/api/permission/rules`);
+                const data = await response.json();
+                testRules = data.rules || [];
+                log(`获取到 ${testRules.length} 条规则`, data.success ? 'success' : 'warn');
+                showResult('rulesResult', data, data.success);
+                updateStats(data.success);
+                return data;
+            } catch (e) {
+                log(`获取规则失败: ${e.message}`, 'error');
+                showResult('rulesResult', { error: e.message }, false);
+                updateStats(false);
+                return null;
+            }
+        }
+
+        async function testAddRule() {
+            log('添加测试规则...', 'info');
+            // 创建请求并立即批准为"始终允许"
+            const request = await createTestRequest('internet');
+            if (request && request.request_id) {
+                await new Promise(r => setTimeout(r, 300));
+                try {
+                    const response = await fetch(`${API_URL}/api/permission/decide`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ 
+                            request_id: request.request_id, 
+                            decision: 'allow_always' 
+                        })
+                    });
+                    const data = await response.json();
+                    log(`规则添加: ${data.success ? '成功' : '失败'}`, data.success ? 'success' : 'error');
+                    showResult('rulesResult', data, data.success);
+                    updateStats(data.success);
+                } catch (e) {
+                    log(`添加规则失败: ${e.message}`, 'error');
+                    showResult('rulesResult', { error: e.message }, false);
+                    updateStats(false);
+                }
+            }
+        }
+
+        async function testDeleteRule() {
+            log('删除测试规则...', 'info');
+            const rulesData = await testGetRules();
+            if (rulesData && rulesData.rules && rulesData.rules.length > 0) {
+                try {
+                    const response = await fetch(`${API_URL}/api/permission/rules/0`, {
+                        method: 'DELETE'
+                    });
+                    const data = await response.json();
+                    log(`删除规则: ${data.success ? '成功' : '失败'}`, data.success ? 'success' : 'error');
+                    showResult('rulesResult', data, data.success);
+                    updateStats(data.success);
+                } catch (e) {
+                    log(`删除规则失败: ${e.message}`, 'error');
+                    showResult('rulesResult', { error: e.message }, false);
+                    updateStats(false);
+                }
+            } else {
+                log('没有规则可删除', 'warn');
+                showResult('rulesResult', { message: '没有规则可删除' }, true);
+            }
+        }
+
+        async function testClearAllRules() {
+            log('清除所有规则...', 'info');
+            const rulesData = await testGetRules();
+            if (rulesData && rulesData.rules) {
+                for (let i = rulesData.rules.length - 1; i >= 0; i--) {
+                    try {
+                        await fetch(`${API_URL}/api/permission/rules/${i}`, { method: 'DELETE' });
+                    } catch (e) {}
+                }
+                log('所有规则已清除', 'success');
+                showResult('rulesResult', { message: '所有规则已清除' }, true);
+            }
+        }
+
+        async function testAutoPermission() {
+            log('测试自动授权检查...', 'info');
+            try {
+                const response = await fetch(`${API_URL}/api/permission/check`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        permission_type: 'internet',
+                        details: 'https://example.com',
+                        session_id: 'test_session'
+                    })
+                });
+                const data = await response.json();
+                log(`自动授权检查: ${data.has_permission ? '有权限' : '无权限'}`, 'info');
+                showResult('autoPermResult', data, true);
+                updateStats(true);
+            } catch (e) {
+                log(`自动授权检查失败: ${e.message}`, 'error');
+                showResult('autoPermResult', { error: e.message }, false);
+                updateStats(false);
+            }
+        }
+
+        // ========== 待处理请求测试 ==========
+
+        async function createMultipleRequests(count) {
+            log(`创建 ${count} 个请求...`, 'info');
+            const types = ['internet', 'file_read', 'code_exec', 'system_cmd', 'api_call'];
+            
+            for (let i = 0; i < count; i++) {
+                const type = types[i % types.length];
+                await createTestRequest(type);
+                await new Promise(r => setTimeout(r, 200));
+            }
+            
+            log(`已创建 ${count} 个请求`, 'success');
+        }
+
+        async function getPendingRequests() {
+            log('获取待处理请求...', 'info');
+            try {
+                const response = await fetch(`${API_URL}/api/permission/pending?session_id=test_session`);
+                const data = await response.json();
+                log(`待处理请求: ${data.requests?.length || 0} 个`, 'info');
+                showResult('pendingResult', data, data.success);
+                return data;
+            } catch (e) {
+                log(`获取待处理失败: ${e.message}`, 'error');
+                showResult('pendingResult', { error: e.message }, false);
+                return null;
+            }
+        }
+
+        async function approveAllPending() {
+            log('批准所有待处理请求...', 'info');
+            const data = await getPendingRequests();
+            if (data && data.requests) {
+                for (const req of data.requests) {
+                    await handleToastDecision(req.request_id, 'allow_session');
+                }
+                log('所有请求已批准', 'success');
+            }
+        }
+
+        async function denyAllPending() {
+            log('拒绝所有待处理请求...', 'info');
+            const data = await getPendingRequests();
+            if (data && data.requests) {
+                for (const req of data.requests) {
+                    await handleToastDecision(req.request_id, 'deny');
+                }
+                log('所有请求已拒绝', 'warn');
+            }
+        }
+
+        async function testTimeout() {
+            log('测试超时自动拒绝 (5秒超时)...', 'info');
+            try {
+                const response = await fetch(`${API_URL}/api/permission/request`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        permission_type: 'internet',
+                        title: '超时测试',
+                        details: 'https://timeout.test',
+                        session_id: 'test_session',
+                        timeout: 5
+                    })
+                });
+                const data = await response.json();
+                if (data.success) {
+                    showToast({
+                        request_id: data.request_id,
+                        permission_type: 'internet',
+                        title: '超时测试 (5秒)',
+                        details: 'https://timeout.test',
+                        timeout: 5
+                    });
+                    showResult('timeoutResult', { message: '等待5秒超时...', request_id: data.request_id }, true);
+                }
+            } catch (e) {
+                log(`超时测试失败: ${e.message}`, 'error');
+                showResult('timeoutResult', { error: e.message }, false);
+            }
+        }
+
+        // ========== 综合测试 ==========
+
+        async function runAllTests() {
+            log('========== 开始所有测试 ==========', 'info');
+            testResults = { pass: 0, fail: 0, total: 0 };
+            
+            const tests = [
+                testAPIConnection,
+                testPermissionAPIs,
+                testGetRules,
+                testAutoPermission
+            ];
+            
+            for (const test of tests) {
+                await test();
+                await new Promise(r => setTimeout(r, 500));
+            }
+            
+            const passed = testResults.pass;
+            const total = testResults.total;
+            log(`========== 测试完成: ${passed}/${total} 通过 ==========`, passed === total ? 'success' : 'warn');
+            showResult('allTestsResult', testResults, passed === total);
+        }
+
+        async function stressTest() {
+            log('========== 压力测试开始 ==========', 'warn');
+            await createMultipleRequests(10);
+            const data = await getPendingRequests();
+            log(`压力测试完成: ${data?.requests?.length || 0} 个待处理请求`, 'info');
+            showResult('allTestsResult', { stressTest: 'completed', pendingCount: data?.requests?.length || 0 }, true);
+        }
+
+        // 页面加载时测试连接
+        window.addEventListener('DOMContentLoaded', () => {
+            log('测试页面已加载', 'info');
+            testAPIConnection();
+        });
+    </script>
+</body>
+</html>

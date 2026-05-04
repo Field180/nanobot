@@ -1,0 +1,5 @@
+nohup: 忽略输入
+Traceback (most recent call last):
+  File "/home/field/.nanobot/workspace/web_ui/server_final.py", line 23, in <module>
+    import paramiko
+ModuleNotFoundError: No module named 'paramiko'

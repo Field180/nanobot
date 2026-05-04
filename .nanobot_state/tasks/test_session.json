@@ -1,0 +1,54 @@
+{
+  "session_id": "test_session",
+  "workspace": "/home/field/.nanobot/workspace/web_ui",
+  "updated_at": "2026-05-04T08:02:15.842450+00:00",
+  "tasks": [
+    {
+      "id": "root-test_session",
+      "title": "Current session task",
+      "objective": "Session todo list",
+      "state": "completed",
+      "priority": 5,
+      "owner": "main_agent",
+      "current_step": "Test task",
+      "steps": [
+        "Test task"
+      ],
+      "blocked_reason": "",
+      "approval_required": false,
+      "verification_required": false,
+      "artifacts": [],
+      "result_summary": "",
+      "parent_id": "",
+      "created_at": "2026-04-28T01:51:56.445433+00:00",
+      "updated_at": "2026-05-04T08:02:15.842364+00:00",
+      "metadata": {},
+      "state_history": [],
+      "is_terminal": true
+    },
+    {
+      "id": "1",
+      "title": "Test task",
+      "objective": "Test task",
+      "state": "planned",
+      "priority": 5,
+      "owner": "main_agent",
+      "current_step": "",
+      "steps": [],
+      "blocked_reason": "",
+      "approval_required": false,
+      "verification_required": false,
+      "artifacts": [],
+      "result_summary": "",
+      "parent_id": "root-test_session",
+      "created_at": "2026-05-04T08:02:15.842049+00:00",
+      "updated_at": "2026-05-04T08:02:15.842065+00:00",
+      "metadata": {
+        "source_status": "pending",
+        "source_content": "Test task"
+      },
+      "state_history": [],
+      "is_terminal": false
+    }
+  ]
+}
