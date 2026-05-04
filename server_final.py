@@ -1663,6 +1663,38 @@ async def prometheus_metrics(request: Request):
         lines.append(f"nanobot_cw2_fallback_trims_total {_CW2_FALLBACK_TRIMS_TOTAL}")
     except Exception:
         pass
+    # R15: shell_passed counter + WAL maintenance gauges for Prometheus
+    lines.append("# HELP nanobot_shell_passed Total shell commands that passed all safety checks.")
+    lines.append("# TYPE nanobot_shell_passed counter")
+    lines.append(f"nanobot_shell_passed {em.get('shell_passed', 0)}")
+    try:
+        from agentic_loop import (_db_maint_fail_count, _db_maint_ineffective,
+                                  _db_maint_wal_baseline, _DB_MAINT_LOCK as _m_lock)
+        from pathlib import Path as _m_Path
+        for _m_label, _m_db in [("rag_vectors", _m_Path.home() / ".nanobot" / "rag_vectors.db"),
+                                ("knowledge_graph", _m_Path.home() / ".nanobot" / "knowledge_graph.db")]:
+            _m_key = str(_m_db)
+            _m_wal_p = _m_Path(_m_key + "-wal")
+            _m_wal_sz = 0
+            try:
+                if _m_wal_p.is_file():
+                    _m_wal_sz = _m_wal_p.stat().st_size
+            except OSError:
+                pass
+            with _m_lock:
+                _m_fails = _db_maint_fail_count.get(_m_key, 0)
+                _m_ineff = _db_maint_ineffective.get(_m_key, 0)
+            lines.append(f'# HELP nanobot_wal_size_bytes WAL file size in bytes.')
+            lines.append(f'# TYPE nanobot_wal_size_bytes gauge')
+            lines.append(f'nanobot_wal_size_bytes{{db="{_m_label}"}} {_m_wal_sz}')
+            lines.append(f'# HELP nanobot_wal_maint_fail_count Consecutive WAL maintenance failures.')
+            lines.append(f'# TYPE nanobot_wal_maint_fail_count gauge')
+            lines.append(f'nanobot_wal_maint_fail_count{{db="{_m_label}"}} {_m_fails}')
+            lines.append(f'# HELP nanobot_wal_maint_ineffective_count Consecutive ineffective WAL checkpoints.')
+            lines.append(f'# TYPE nanobot_wal_maint_ineffective_count gauge')
+            lines.append(f'nanobot_wal_maint_ineffective_count{{db="{_m_label}"}} {_m_ineff}')
+    except Exception:
+        pass
     lines.append("")
     return Response(content="\n".join(lines), media_type="text/plain; version=0.0.4; charset=utf-8")
 
@@ -41455,7 +41487,10 @@ async def detailed_health_check():
                                            "message": f"WAL checkpoint ineffective: {_h_maint_ineff} consecutive runs, WAL grew from {_h_wal_base} to {_h_wal_bytes} bytes"})
                             with _DB_MAINT_LOCK:
                                 _db_maint_ineff_alert_suppressed_until[_h_db_key] = _h_mono + _DB_MAINT_INEFF_ALERT_SUPPRESS_SECS
-                    if _h_wal_bytes > 10 * 1024 * 1024:  # 10 MB threshold
+                    if _h_wal_bytes > 50 * 1024 * 1024:  # R15: 50 MB critical — bypasses suppression
+                        issues.append({"component": f"sqlite_{_db_label}", "status": "critical",
+                                       "message": f"WAL file critical: {_h_wal_bytes / 1024 / 1024:.1f} MB — checkpoint may be blocked, risk of disk exhaustion"})
+                    elif _h_wal_bytes > 10 * 1024 * 1024:  # 10 MB warning
                         issues.append({"component": f"sqlite_{_db_label}", "status": "warning",
                                        "message": f"WAL file large: {_h_wal_bytes / 1024 / 1024:.1f} MB"})
                     if _h_jm != "wal" or _h_bt != 5000:

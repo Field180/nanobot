@@ -1450,6 +1450,10 @@ def _open_db(path: Path):
                             _db_maint_ineffective[_path_key] = _ie
                             if _prev_ie == 0:
                                 _db_maint_wal_baseline[_path_key] = _cur_wal_size
+                            elif _ie % _DB_MAINT_INEFFECTIVE_THRESHOLD == 0:
+                                # R15: Refresh baseline every N ineffective runs to avoid
+                                # stale growth calculations during long streaks.
+                                _db_maint_wal_baseline[_path_key] = _cur_wal_size
                         else:
                             _db_maint_ineffective[_path_key] = 0
                             _db_maint_wal_baseline.pop(_path_key, None)

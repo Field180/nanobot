@@ -2474,6 +2474,34 @@ check("r14_health_shell_passed",
       "shell_passed" in _r14_dhc_src or "_h_shell_passed" in _r14_dhc_src,
       "/health/detailed must expose shell passed count")
 
+# ── R15: Baseline refresh + WAL critical alert + Prometheus metrics ──
+print("\n  -- Audit R15: WAL baseline refresh during long streaks --")
+_r15_src = _ct_inspect.getsource(_ct_al._open_db)
+check("r15_baseline_refresh_periodic",
+      "_DB_MAINT_INEFFECTIVE_THRESHOLD" in _r15_src and "% _DB_MAINT_INEFFECTIVE_THRESHOLD" in _r15_src,
+      "_open_db must refresh WAL baseline every N ineffective runs (modulo threshold)")
+
+print("\n  -- Audit R15: WAL absolute critical alert --")
+_r15_dhc_src = _ct_inspect.getsource(__import__("server_final", fromlist=["detailed_health_check"]).detailed_health_check)
+check("r15_health_wal_critical_50mb",
+      "50 * 1024 * 1024" in _r15_dhc_src and "critical" in _r15_dhc_src,
+      "/health/detailed must have WAL >50MB critical alert that bypasses suppression")
+
+print("\n  -- Audit R15: Prometheus /api/metrics WAL + shell_passed --")
+_r15_metrics_src = _ct_inspect.getsource(__import__("server_final", fromlist=["prometheus_metrics"]).prometheus_metrics)
+check("r15_prom_shell_passed",
+      "nanobot_shell_passed" in _r15_metrics_src,
+      "/api/metrics must export nanobot_shell_passed counter")
+check("r15_prom_wal_size",
+      "nanobot_wal_size_bytes" in _r15_metrics_src,
+      "/api/metrics must export nanobot_wal_size_bytes gauge per DB")
+check("r15_prom_wal_ineffective",
+      "nanobot_wal_maint_ineffective_count" in _r15_metrics_src,
+      "/api/metrics must export nanobot_wal_maint_ineffective_count gauge per DB")
+check("r15_prom_wal_fail",
+      "nanobot_wal_maint_fail_count" in _r15_metrics_src,
+      "/api/metrics must export nanobot_wal_maint_fail_count gauge per DB")
+
 # ======================================================================
 # Summary
 # ======================================================================
