@@ -1697,8 +1697,13 @@ async def prometheus_metrics(request: Request):
             from agentic_loop import _db_maint_last_success as _m_last_ok
             import time as _m_time
             _m_last_ok_ts = _m_last_ok.get(_m_key)
-            _m_age = _m_time.time() - _m_last_ok_ts if _m_last_ok_ts is not None else -1
-            lines.append(f'# HELP nanobot_wal_maint_last_check_seconds Seconds since last successful WAL maintenance.')
+            if _m_last_ok_ts is not None:
+                _m_age = _m_time.time() - _m_last_ok_ts
+            else:
+                # R18: Never-succeeded — report process uptime so staleness alert still fires
+                from tools.shell_execute import _PROCESS_START_TIME as _m_pstart
+                _m_age = _m_time.time() - _m_pstart
+            lines.append(f'# HELP nanobot_wal_maint_last_check_seconds Seconds since last successful WAL maintenance (process uptime if never succeeded).')
             lines.append(f'# TYPE nanobot_wal_maint_last_check_seconds gauge')
             lines.append(f'nanobot_wal_maint_last_check_seconds{{db="{_m_label}"}} {_m_age:.1f}')
     except Exception:
@@ -41489,10 +41494,17 @@ async def detailed_health_check():
                     if _h_maint_fails > 5:
                         issues.append({"component": f"sqlite_{_db_label}", "status": "warning",
                                        "message": f"WAL maintenance failing: {_h_maint_fails} consecutive failures"})
-                    # R17: WAL maintenance staleness alert — detect idle-period monitoring gaps
+                    # R17+R18: WAL maintenance staleness alert — detect idle-period and initial-phase gaps
                     if _h_maint_age_secs is not None and _h_maint_age_secs > 600:
                         issues.append({"component": f"sqlite_{_db_label}", "status": "warning",
                                        "message": f"WAL maintenance stale: last success {_h_maint_age_secs:.0f}s ago (>600s)"})
+                    elif _h_maint_age_secs is None:
+                        # R18: Initial-phase blind spot — maintenance never succeeded
+                        from tools.shell_execute import _PROCESS_START_TIME
+                        _h_uptime = _h_time.time() - _PROCESS_START_TIME
+                        if _h_uptime > 600:
+                            issues.append({"component": f"sqlite_{_db_label}", "status": "warning",
+                                           "message": f"WAL maintenance never completed (uptime {_h_uptime:.0f}s)"})
                     # R14: Growth-aware ineffective alert — only fire when WAL actually grew >20%
                     # since the ineffective streak began, AND suppress repeats for 5 minutes.
                     if _h_maint_ineff >= _DB_MAINT_INEFFECTIVE_THRESHOLD:

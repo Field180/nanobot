@@ -2557,6 +2557,53 @@ if _r16_os.path.isfile(_r17_alerts_path):
           "nanobot_wal_maint_last_check_seconds" in _r17_alerts_content,
           "NanobotWalMaintenanceStale must reference nanobot_wal_maint_last_check_seconds metric")
 
+# ── R18: Initial-phase blind spot + alerts.yml structural validation ──
+print("\n  -- Audit R18: Initial-phase maintenance-never-completed alert --")
+_r18_dhc_src = _ct_inspect.getsource(__import__("server_final", fromlist=["detailed_health_check"]).detailed_health_check)
+check("r18_health_never_completed_alert",
+      "maintenance never completed" in _r18_dhc_src.lower(),
+      "/health/detailed must alert when maintenance has never completed (initial-phase blind spot)")
+check("r18_health_uptime_guard",
+      "_PROCESS_START_TIME" in _r18_dhc_src and "600" in _r18_dhc_src,
+      "/health/detailed initial-phase alert must use process uptime >600s guard")
+
+print("\n  -- Audit R18: Prometheus gauge never-succeeded fallback --")
+_r18_prom_src = _ct_inspect.getsource(__import__("server_final", fromlist=["prometheus_metrics"]).prometheus_metrics)
+check("r18_prom_uptime_fallback",
+      "_PROCESS_START_TIME" in _r18_prom_src,
+      "/api/metrics must use process uptime as fallback when maintenance never succeeded")
+
+print("\n  -- Audit R18: alerts.yml structural validation --")
+import yaml as _r18_yaml
+_r18_alerts_path = _r16_os.path.join(_r16_os.path.dirname(__file__), "..", "deploy", "prometheus", "alerts.yml")
+with open(_r18_alerts_path) as _r18_f:
+    _r18_data = _r18_yaml.safe_load(_r18_f)
+_r18_all_rules = []
+for _r18_grp in _r18_data.get("groups", []):
+    _r18_all_rules.extend(_r18_grp.get("rules", []))
+_r18_missing_for = [r["alert"] for r in _r18_all_rules if "for" not in r]
+check("r18_all_rules_have_for",
+      len(_r18_missing_for) == 0,
+      f"All alert rules must have 'for:' field (missing: {_r18_missing_for})")
+_r18_missing_severity = [r["alert"] for r in _r18_all_rules if "severity" not in r.get("labels", {})]
+check("r18_all_rules_have_severity",
+      len(_r18_missing_severity) == 0,
+      f"All alert rules must have severity label (missing: {_r18_missing_severity})")
+
+print("\n  -- Audit R18: example.alertmanager.yml exists --")
+_r18_am_path = _r16_os.path.join(_r16_os.path.dirname(__file__), "..", "deploy", "prometheus", "example.alertmanager.yml")
+check("r18_alertmanager_example_exists",
+      _r16_os.path.isfile(_r18_am_path),
+      "deploy/prometheus/example.alertmanager.yml must exist")
+if _r16_os.path.isfile(_r18_am_path):
+    _r18_am_content = open(_r18_am_path).read()
+    check("r18_alertmanager_has_receiver",
+          "receivers:" in _r18_am_content and "REPLACE_ME" in _r18_am_content,
+          "example.alertmanager.yml must contain receivers with placeholder values")
+    check("r18_alertmanager_has_route",
+          "route:" in _r18_am_content,
+          "example.alertmanager.yml must contain route configuration")
+
 # ======================================================================
 # Summary
 # ======================================================================

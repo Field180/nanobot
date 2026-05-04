@@ -1,0 +1,44 @@
+# Nanobot Alertmanager Configuration — Example Template
+# Copy this file to your Alertmanager config directory and replace REPLACE_ME values.
+# See: https://prometheus.io/docs/alerting/latest/configuration/
+
+global:
+  resolve_timeout: 5m
+
+route:
+  receiver: 'default'
+  group_by: ['alertname', 'db']
+  group_wait: 30s
+  group_interval: 5m
+  repeat_interval: 4h
+  routes:
+    - receiver: 'critical'
+      match:
+        severity: critical
+      repeat_interval: 1h
+
+receivers:
+  - name: 'default'
+    webhook_configs:
+      - url: 'http://REPLACE_ME:5001/webhook'
+        send_resolved: true
+    # Uncomment and configure for Slack:
+    # slack_configs:
+    #   - api_url: 'https://hooks.slack.com/services/REPLACE_ME'
+    #     channel: '#alerts'
+    #     send_resolved: true
+
+  - name: 'critical'
+    webhook_configs:
+      - url: 'http://REPLACE_ME:5001/webhook'
+        send_resolved: true
+    # Uncomment and configure for PagerDuty:
+    # pagerduty_configs:
+    #   - service_key: 'REPLACE_ME'
+
+inhibit_rules:
+  - source_match:
+      severity: 'critical'
+    target_match:
+      severity: 'warning'
+    equal: ['alertname', 'db']
