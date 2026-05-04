@@ -2164,31 +2164,111 @@ check("r7_health_uses_readonly_uri",
       any("mode=ro" in s for s in _r7_all_strings),
       "/health/detailed must use read-only URI mode for defense-in-depth")
 
-# ── R9: WAL checkpoint + incremental vacuum on close ──
-print("\n  -- Audit R9: WAL checkpoint strategy in _open_db --")
-_r9_open_db_src = _ct_inspect.getsource(_ct_al._open_db)
-check("r9_wal_checkpoint_on_close",
-      "wal_checkpoint(PASSIVE)" in _r9_open_db_src,
-      "_open_db must execute PRAGMA wal_checkpoint(PASSIVE) on connection close")
-check("r9_incremental_vacuum_on_close",
-      "incremental_vacuum" in _r9_open_db_src,
-      "_open_db must execute PRAGMA incremental_vacuum on connection close")
+# ── R10: Time-driven WAL checkpoint + incremental vacuum ──
+print("\n  -- Audit R10: Time-driven WAL maintenance in _open_db --")
+_r10_open_db_src = _ct_inspect.getsource(_ct_al._open_db)
+check("r10_has_interval_guard",
+      "_DB_MAINT_INTERVAL" in _r10_open_db_src and "monotonic" in _r10_open_db_src,
+      "_open_db must use time-driven maintenance interval guard")
+check("r10_has_checkpoint",
+      "wal_checkpoint(PASSIVE)" in _r10_open_db_src,
+      "_open_db must execute PRAGMA wal_checkpoint(PASSIVE)")
+check("r10_has_vacuum",
+      "incremental_vacuum" in _r10_open_db_src,
+      "_open_db must execute PRAGMA incremental_vacuum")
+check("r10_logs_failure",
+      "WAL maintenance failed" in _r10_open_db_src,
+      "_open_db must log WARNING on maintenance failure")
 
-# Behavioral: actually open/close DB and verify checkpoint doesn't crash
-_r9_db_path = Path(_r5_tmpdir) / "test_r9_wal.db"
+# Behavioral: time-driven — first call runs, rapid second call skips
+import time as _r10_time
+_r10_db_path = Path(_r5_tmpdir) / "test_r10_wal.db"
+# Reset maint state for this test path
+_r10_path_key = str(_r10_db_path)
+with _ct_al._DB_MAINT_LOCK:
+    _ct_al._db_maint_last.pop(_r10_path_key, None)
+    _ct_al._db_maint_fail_count.pop(_r10_path_key, None)
+    _ct_al._db_maint_last_success.pop(_r10_path_key, None)
 try:
-    with _open_db(_r9_db_path) as _r9_conn:
-        _r9_conn.execute("CREATE TABLE _r9 (id INTEGER)")
-        _r9_conn.commit()
-    # If we get here, checkpoint+vacuum ran without error during close
-    check("r9_checkpoint_executes_cleanly", True,
-          "WAL checkpoint + incremental vacuum must not raise on close")
-finally:
-    _r9_db_path.unlink(missing_ok=True)
-    Path(str(_r9_db_path) + "-wal").unlink(missing_ok=True)
-    Path(str(_r9_db_path) + "-shm").unlink(missing_ok=True)
+    # First open/close: should run maintenance (interval expired → 0.0 default)
+    with _open_db(_r10_db_path) as _r10_conn:
+        _r10_conn.execute("CREATE TABLE _r10 (id INTEGER)")
+        _r10_conn.commit()
+    with _ct_al._DB_MAINT_LOCK:
+        _r10_ran_first = _r10_path_key in _ct_al._db_maint_last_success
+    check("r10_time_driven_runs", _r10_ran_first,
+          "first close must run WAL maintenance (interval starts at 0)")
 
-# ── R9: WAL file size in /health/detailed ──
+    # Second immediate open/close: should SKIP (within 30s interval)
+    with _ct_al._DB_MAINT_LOCK:
+        _r10_last_before = _ct_al._db_maint_last_success.get(_r10_path_key)
+    with _open_db(_r10_db_path) as _r10_conn2:
+        _r10_conn2.execute("SELECT 1")
+    with _ct_al._DB_MAINT_LOCK:
+        _r10_last_after = _ct_al._db_maint_last_success.get(_r10_path_key)
+    check("r10_time_driven_skip", _r10_last_before == _r10_last_after,
+          "rapid second close must skip maintenance (within 30s interval)")
+finally:
+    _r10_db_path.unlink(missing_ok=True)
+    Path(str(_r10_db_path) + "-wal").unlink(missing_ok=True)
+    Path(str(_r10_db_path) + "-shm").unlink(missing_ok=True)
+
+# Behavioral: maintenance failure increments counter and logs
+print("\n  -- Audit R10: WAL maintenance failure observability --")
+_r10_db_fail = Path(_r5_tmpdir) / "test_r10_fail.db"
+_r10_fk = str(_r10_db_fail)
+with _ct_al._DB_MAINT_LOCK:
+    _ct_al._db_maint_last.pop(_r10_fk, None)
+    _ct_al._db_maint_fail_count.pop(_r10_fk, None)
+    _ct_al._db_maint_last_success.pop(_r10_fk, None)
+try:
+    import logging as _r10_logging
+    _r10_handler = _r10_logging.handlers.MemoryHandler(capacity=100) if hasattr(_r10_logging, 'handlers') else None
+    # Simple log capture: track if warning was emitted
+    _r10_warnings = []
+    class _R10Handler(_r10_logging.Handler):
+        def emit(self, record):
+            if "WAL maintenance failed" in record.getMessage():
+                _r10_warnings.append(record.getMessage())
+    _r10_h = _R10Handler()
+    _r10_logger = _r10_logging.getLogger("agentic_loop")
+    _r10_logger.addHandler(_r10_h)
+    try:
+        with _open_db(_r10_db_fail) as _r10_conn3:
+            _r10_conn3.execute("CREATE TABLE _r10f (id INTEGER)")
+            _r10_conn3.commit()
+            # Corrupt the connection so checkpoint/vacuum will fail
+            _r10_conn3.close()  # close early — finally will try to use closed conn
+        # The except in _open_db should catch the error and increment fail counter
+    except Exception:
+        pass  # expected — closed conn may raise on PRAGMA
+    finally:
+        _r10_logger.removeHandler(_r10_h)
+    with _ct_al._DB_MAINT_LOCK:
+        _r10_fc = _ct_al._db_maint_fail_count.get(_r10_fk, 0)
+    check("r10_maint_failure_counted", _r10_fc >= 1,
+          "maintenance failure must increment fail counter")
+    check("r10_maint_failure_logged", len(_r10_warnings) >= 1,
+          "maintenance failure must emit WARNING log")
+finally:
+    _r10_db_fail.unlink(missing_ok=True)
+    Path(str(_r10_db_fail) + "-wal").unlink(missing_ok=True)
+    Path(str(_r10_db_fail) + "-shm").unlink(missing_ok=True)
+
+# ── R10: /health/detailed maintenance observability ──
+print("\n  -- Audit R10: /health/detailed maintenance observability --")
+_r10_dhc_src = _ct_inspect.getsource(__import__("server_final", fromlist=["detailed_health_check"]).detailed_health_check)
+import ast as _r10_ast
+_r10_dhc_tree = _r10_ast.parse(_r10_dhc_src)
+_r10_all_strings = [node.value for node in _r10_ast.walk(_r10_dhc_tree) if isinstance(node, _r10_ast.Constant) and isinstance(node.value, str)]
+check("r10_health_has_maint_fail_count",
+      any("maintenance_fail_count" in s for s in _r10_all_strings),
+      "/health/detailed must expose maintenance failure count")
+check("r10_health_has_maint_last_success",
+      any("maintenance_last_success" in s for s in _r10_all_strings),
+      "/health/detailed must expose last successful maintenance timestamp")
+
+# ── R9: WAL file size in /health/detailed (unchanged) ──
 print("\n  -- Audit R9: /health/detailed WAL file size monitoring --")
 check("r9_health_has_wal_size",
       any("wal_size_bytes" in s for s in _r7_all_strings),
