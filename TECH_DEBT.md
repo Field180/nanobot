@@ -53,6 +53,8 @@ Tracks deferred items from audit rounds. Items are classified by root cause:
 | ~~TD-R~~ | WAL maintenance failure not observable | R10 | Failures logged as WARNING (first 3 + every 10th); `/health/detailed` exposes `maintenance_fail_count` + `maintenance_last_success` per DB; alerts at >5 consecutive failures | Behavioral: r10_maint_failure_logged; AST-structural: r10_health_has_maint_fields |
 | ~~TD-S~~ | checkpoint/vacuum runs per-connection (unnecessary overhead) | R10→R12 | Hybrid strategy: time-driven (`_DB_MAINT_INTERVAL=30s`) + WAL-size-driven (`_DB_MAINT_WAL_THRESHOLD=1MB`) with 10s cooldown on size path to prevent every-connection spam on stale large WAL | Behavioral: r10_time_driven_skip + r10_time_driven_runs + r11_wal_size_bypass + r12_size_trigger_cooldown |
 | ~~TD-T~~ | git initial commit contained build artifacts and test residuals | R11→R12 | `git rm --cached` removed 430+ files; `.gitignore` uses `**/` prefix for nested matching + `test_u3_result*.json` pattern; `git gc --aggressive` reclaims object storage | Verified: `git ls-files --cached \| grep __pycache__` returns 0 |
+| ~~TD-U~~ | WAL checkpoint effectiveness unknown — PASSIVE may silently fail with active readers | R13 | `wal_checkpoint(PASSIVE)` return value inspected: `(busy, log, checkpointed)`. If `log > 0` and `checkpointed == 0`, tracked as ineffective. `/health/detailed` exposes `maintenance_ineffective_count` and alerts at ≥5 consecutive. WARNING logged with frame counts. | Source: r13_reads_checkpoint_return + r13_checks_log_frames + r13_tracks_ineffective; AST: r13_health_has_ineffective_count + r13_health_alerts_ineffective |
+| ~~TD-V~~ | shell_execute unblocked command volume invisible | R13 | `_SHELL_PASSED` counter incremented for every command that passes all safety checks and actually executes. Exposed in `get_shell_metrics()`, persisted in snapshot. Enables passive anomaly detection. | Source: r13_metrics_has_passed + r13_record_increments_passed |
 
 ## Policy
 
@@ -80,6 +82,8 @@ Items resolved before R8 (marked "pre-R8 standard") retain their original verifi
 | File | Owner | Purpose | Update trigger |
 |------|-------|---------|----------------|
 | `tests/test_audit_fixes.py` | Project maintainer (hand-maintained) | Regression tests for audit-identified issues | Each audit round that introduces code changes |
+
+**Maintenance contract**: When `_open_db`, `shell_execute`, or `/health/detailed` are refactored, the maintainer must run `python tests/test_audit_fixes.py` and update any source-inspection tests whose string assertions break due to renamed variables or restructured code. Tests that check *behavioral outcomes* (e.g., `r10_time_driven_runs`) are refactor-safe; tests that check *source strings* (e.g., `r13_reads_checkpoint_return`) may need updating.
 
 ### Escalation / De-escalation Criteria
 

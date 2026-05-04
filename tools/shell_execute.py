@@ -17,6 +17,7 @@ _SHELL_METRICS_LOCK = threading.Lock()
 _SHELL_TOTAL = 0
 _SHELL_ERRORS = 0
 _SHELL_BLOCKED = 0
+_SHELL_PASSED = 0  # R13: commands that passed all safety checks and executed
 _SHELL_LATENCY_SUM_MS = 0.0
 _SHELL_LATENCY_COUNT = 0
 # Histogram buckets (upper bound in ms). +Inf is implicit.
@@ -37,9 +38,10 @@ def _observe_latency(ms: float) -> None:
 
 def _record_execution(elapsed_ms: float, success: bool) -> None:
     """Atomically update all per-execution metrics in a single lock acquisition."""
-    global _SHELL_TOTAL, _SHELL_ERRORS, _SHELL_LATENCY_SUM_MS, _SHELL_LATENCY_COUNT
+    global _SHELL_TOTAL, _SHELL_ERRORS, _SHELL_PASSED, _SHELL_LATENCY_SUM_MS, _SHELL_LATENCY_COUNT
     with _SHELL_METRICS_LOCK:
         _SHELL_TOTAL += 1
+        _SHELL_PASSED += 1
         _SHELL_LATENCY_SUM_MS += elapsed_ms
         _SHELL_LATENCY_COUNT += 1
         for i, bound in enumerate(_HISTOGRAM_BOUNDS):
@@ -56,6 +58,7 @@ def get_shell_metrics() -> dict:
             "shell_total": _SHELL_TOTAL,
             "shell_errors": _SHELL_ERRORS,
             "shell_blocked": _SHELL_BLOCKED,
+            "shell_passed": _SHELL_PASSED,
             "shell_latency_ms_sum": _SHELL_LATENCY_SUM_MS,
             "shell_latency_ms_count": _SHELL_LATENCY_COUNT,
             "shell_latency_ms_buckets": list(zip(_HISTOGRAM_BOUNDS, _SHELL_LATENCY_BUCKETS)),
@@ -144,7 +147,7 @@ def _save_metrics_snapshot() -> None:
     global _SNAPSHOT_FAILURES
     with _SHELL_METRICS_LOCK:
         data = {
-            "total": _SHELL_TOTAL, "errors": _SHELL_ERRORS, "blocked": _SHELL_BLOCKED,
+            "total": _SHELL_TOTAL, "errors": _SHELL_ERRORS, "blocked": _SHELL_BLOCKED, "passed": _SHELL_PASSED,
             "latency_sum": _SHELL_LATENCY_SUM_MS, "latency_count": _SHELL_LATENCY_COUNT,
             "buckets": _SHELL_LATENCY_BUCKETS[:],
         }
@@ -163,7 +166,7 @@ def _save_metrics_snapshot() -> None:
 
 def _load_metrics_snapshot() -> None:
     """Restore all metrics from disk on startup."""
-    global _SHELL_TOTAL, _SHELL_ERRORS, _SHELL_BLOCKED
+    global _SHELL_TOTAL, _SHELL_ERRORS, _SHELL_BLOCKED, _SHELL_PASSED
     global _SHELL_LATENCY_SUM_MS, _SHELL_LATENCY_COUNT
     try:
         if not _METRICS_SNAPSHOT_PATH.exists():
@@ -173,6 +176,7 @@ def _load_metrics_snapshot() -> None:
             _SHELL_TOTAL = data.get("total", 0)
             _SHELL_ERRORS = data.get("errors", 0)
             _SHELL_BLOCKED = data.get("blocked", 0)
+            _SHELL_PASSED = data.get("passed", 0)
             _SHELL_LATENCY_SUM_MS = data.get("latency_sum", 0.0)
             _SHELL_LATENCY_COUNT = data.get("latency_count", 0)
             buckets = data.get("buckets", [])
@@ -747,7 +751,7 @@ def execute(args: dict, workspace: Path) -> dict:
         return {"success": False, "output": "", "error": "No command provided"}
 
     session_id = args.get("_session_id", "")
-    global _SHELL_TOTAL, _SHELL_ERRORS, _SHELL_BLOCKED
+    global _SHELL_TOTAL, _SHELL_ERRORS, _SHELL_BLOCKED, _SHELL_PASSED
 
     # P15: Tiered shell safety check (BLOCKED → reject, WARN → execute with caution)
     # CTO audit: This runs BEFORE sandbox routing — approval flow is preserved.

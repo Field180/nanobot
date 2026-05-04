@@ -1356,6 +1356,8 @@ _DB_MAINT_WAL_THRESHOLD = 1 * 1024 * 1024  # 1 MB — bypass interval if WAL exc
 _db_maint_last: dict[str, float] = {}  # path_str → last maintenance monotonic time
 _db_maint_fail_count: dict[str, int] = {}  # path_str → consecutive failure count
 _db_maint_last_success: dict[str, float] = {}  # path_str → last success wall-clock time
+_db_maint_ineffective: dict[str, int] = {}  # path_str → consecutive ineffective checkpoint count
+_DB_MAINT_INEFFECTIVE_THRESHOLD = 5  # alert in /health after N consecutive ineffective checkpoints
 
 
 def _open_db(path: Path):
@@ -1418,11 +1420,34 @@ def _open_db(path: Path):
                 with _DB_MAINT_LOCK:
                     _db_maint_last[_path_key] = _now
                 try:
-                    conn.execute("PRAGMA wal_checkpoint(PASSIVE)")
+                    _cp_row = conn.execute("PRAGMA wal_checkpoint(PASSIVE)").fetchone()
                     conn.execute("PRAGMA incremental_vacuum(64)")
+                    # R13: Inspect checkpoint return value (busy, log, checkpointed).
+                    # If log > 0 and checkpointed == 0, checkpoint was ineffective
+                    # (e.g. active readers holding shared locks).
+                    _cp_ineffective = False
+                    if _cp_row and len(_cp_row) >= 3:
+                        _cp_log, _cp_done = _cp_row[1], _cp_row[2]
+                        if _cp_log > 0 and _cp_done == 0:
+                            _cp_ineffective = True
                     with _DB_MAINT_LOCK:
                         _db_maint_fail_count[_path_key] = 0
                         _db_maint_last_success[_path_key] = _time_mod_db.time()
+                        if _cp_ineffective:
+                            _ie = _db_maint_ineffective.get(_path_key, 0) + 1
+                            _db_maint_ineffective[_path_key] = _ie
+                        else:
+                            _db_maint_ineffective[_path_key] = 0
+                    if _cp_ineffective:
+                        _ie_count = _db_maint_ineffective.get(_path_key, 0)
+                        if _ie_count <= 3 or _ie_count % 10 == 0:
+                            logger.warning(
+                                "[SQLite] WAL checkpoint ineffective (count=%d) on %s: "
+                                "log=%s checkpointed=%s (readers may hold shared lock)",
+                                _ie_count, _path_key,
+                                _cp_row[1] if _cp_row else '?',
+                                _cp_row[2] if _cp_row else '?',
+                            )
                 except Exception as _maint_exc:
                     with _DB_MAINT_LOCK:
                         _fc = _db_maint_fail_count.get(_path_key, 0) + 1

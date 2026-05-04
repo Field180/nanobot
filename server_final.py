@@ -41420,19 +41420,26 @@ async def detailed_health_check():
                     # R9: Report WAL file size for disk growth monitoring
                     _h_wal_path = _h_Path(str(_db_path) + "-wal")
                     _h_wal_bytes = _h_wal_path.stat().st_size if _h_wal_path.is_file() else 0
-                    # R10: Include WAL maintenance observability from agentic_loop
-                    from agentic_loop import _db_maint_fail_count, _db_maint_last_success, _DB_MAINT_LOCK
+                    # R10/R13: Include WAL maintenance observability from agentic_loop
+                    from agentic_loop import (_db_maint_fail_count, _db_maint_last_success,
+                                              _db_maint_ineffective, _DB_MAINT_INEFFECTIVE_THRESHOLD,
+                                              _DB_MAINT_LOCK)
                     with _DB_MAINT_LOCK:
                         _h_maint_fails = _db_maint_fail_count.get(str(_db_path), 0)
                         _h_maint_last_ok = _db_maint_last_success.get(str(_db_path))
+                        _h_maint_ineff = _db_maint_ineffective.get(str(_db_path), 0)
                     _pragmas = {"journal_mode": _h_jm, "busy_timeout": _h_bt, "auto_vacuum": _h_av,
                                 "wal_size_bytes": _h_wal_bytes,
                                 "maintenance_fail_count": _h_maint_fails,
-                                "maintenance_last_success": _h_maint_last_ok}
+                                "maintenance_last_success": _h_maint_last_ok,
+                                "maintenance_ineffective_count": _h_maint_ineff}
                     _sqlite_status["pragmas"][_db_label] = _pragmas
                     if _h_maint_fails > 5:
                         issues.append({"component": f"sqlite_{_db_label}", "status": "warning",
                                        "message": f"WAL maintenance failing: {_h_maint_fails} consecutive failures"})
+                    if _h_maint_ineff >= _DB_MAINT_INEFFECTIVE_THRESHOLD:
+                        issues.append({"component": f"sqlite_{_db_label}", "status": "warning",
+                                       "message": f"WAL checkpoint ineffective: {_h_maint_ineff} consecutive runs with no frames checkpointed (readers may hold locks)"})
                     if _h_wal_bytes > 10 * 1024 * 1024:  # 10 MB threshold
                         issues.append({"component": f"sqlite_{_db_label}", "status": "warning",
                                        "message": f"WAL file large: {_h_wal_bytes / 1024 / 1024:.1f} MB"})

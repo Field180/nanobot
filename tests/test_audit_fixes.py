@@ -2408,6 +2408,42 @@ check("r5_timeout_event_has_session_id",
       if "exceeded during tool execution" in _r5_acs_src else False,
       "intra-turn timeout error should reference session_id in logging")
 
+# ── R13: WAL checkpoint return value inspection ──
+print("\n  -- Audit R13: WAL checkpoint return value inspection --")
+_r13_src = _ct_inspect.getsource(_ct_al._open_db)
+check("r13_reads_checkpoint_return",
+      "fetchone()" in _r13_src and "wal_checkpoint(PASSIVE)" in _r13_src,
+      "_open_db must read wal_checkpoint(PASSIVE) return value via fetchone()")
+check("r13_checks_log_frames",
+      "_cp_log" in _r13_src and "_cp_done" in _r13_src,
+      "_open_db must inspect log and checkpointed frame counts")
+check("r13_tracks_ineffective",
+      "_db_maint_ineffective" in _r13_src,
+      "_open_db must track consecutive ineffective checkpoint count")
+check("r13_logs_ineffective_warning",
+      "checkpoint ineffective" in _r13_src,
+      "_open_db must log WARNING when checkpoint is ineffective")
+
+# R13: /health/detailed exposes ineffective count
+print("\n  -- Audit R13: /health/detailed ineffective checkpoint exposure --")
+check("r13_health_has_ineffective_count",
+      any("maintenance_ineffective_count" in s for s in _r10_all_strings),
+      "/health/detailed must expose maintenance_ineffective_count")
+check("r13_health_alerts_ineffective",
+      any("checkpoint ineffective" in s for s in _r10_all_strings),
+      "/health/detailed must alert on consecutive ineffective checkpoints")
+
+# R13: shell_execute metrics include passed counter
+print("\n  -- Audit R13: shell_execute passed counter --")
+_r13_se_metrics_src = _ct_inspect.getsource(_r9_se_mod.get_shell_metrics)
+check("r13_metrics_has_passed",
+      "shell_passed" in _r13_se_metrics_src,
+      "get_shell_metrics must expose shell_passed counter")
+_r13_se_record_src = _ct_inspect.getsource(_r9_se_mod._record_execution)
+check("r13_record_increments_passed",
+      "_SHELL_PASSED" in _r13_se_record_src,
+      "_record_execution must increment _SHELL_PASSED counter")
+
 # ======================================================================
 # Summary
 # ======================================================================
