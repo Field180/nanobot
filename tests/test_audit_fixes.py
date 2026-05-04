@@ -2604,6 +2604,114 @@ if _r16_os.path.isfile(_r18_am_path):
           "route:" in _r18_am_content,
           "example.alertmanager.yml must contain route configuration")
 
+# ── R19: Staleness alert behavioral tests (time-mocked end-to-end) ──
+print("\n  -- Audit R19: Staleness alert behavioral verification --")
+import asyncio as _r19_asyncio
+import time as _r19_time
+
+# Behavioral test: manipulate agentic_loop state + time to verify alert triggers
+from agentic_loop import (_db_maint_last_success, _db_maint_fail_count,
+                          _db_maint_ineffective, _db_maint_wal_baseline,
+                          _db_maint_ineff_alert_suppressed_until, _DB_MAINT_LOCK)
+from pathlib import Path as _r19_Path
+
+# Use the real DB key (if it exists) or the first known DB path
+_r19_db_path = _r19_Path.home() / ".nanobot" / "rag_vectors.db"
+_r19_db_key = str(_r19_db_path)
+
+if _r19_db_path.is_file():
+    # Save original state
+    with _DB_MAINT_LOCK:
+        _r19_orig_last_ok = _db_maint_last_success.get(_r19_db_key)
+        _r19_orig_fails = _db_maint_fail_count.get(_r19_db_key, 0)
+        _r19_orig_ineff = _db_maint_ineffective.get(_r19_db_key, 0)
+
+    # --- Scenario A: Recent maintenance (< 600s) → no staleness alert ---
+    with _DB_MAINT_LOCK:
+        _db_maint_last_success[_r19_db_key] = _r19_time.time() - 30  # 30s ago
+        _db_maint_fail_count[_r19_db_key] = 0
+        _db_maint_ineffective[_r19_db_key] = 0
+    _r19_body_a = _r19_asyncio.get_event_loop().run_until_complete(
+        __import__("server_final", fromlist=["detailed_health_check"]).detailed_health_check())
+    _r19_issues_a = _r19_body_a.get("issues") or []
+    _r19_stale_issues_a = [i for i in _r19_issues_a
+                           if "stale" in i.get("message", "").lower() and "rag_vectors" in i.get("component", "")]
+    _r19_never_issues_a = [i for i in _r19_issues_a
+                           if "never completed" in i.get("message", "").lower() and "rag_vectors" in i.get("component", "")]
+    check("r19_no_stale_when_recent",
+          len(_r19_stale_issues_a) == 0,
+          "No staleness alert when maintenance was 30s ago")
+    check("r19_no_never_when_recent",
+          len(_r19_never_issues_a) == 0,
+          "No 'never completed' alert when maintenance succeeded recently")
+
+    # --- Scenario B: Stale maintenance (> 600s) → staleness alert fires ---
+    with _DB_MAINT_LOCK:
+        _db_maint_last_success[_r19_db_key] = _r19_time.time() - 900  # 900s (15min) ago
+    _r19_body_b = _r19_asyncio.get_event_loop().run_until_complete(
+        __import__("server_final", fromlist=["detailed_health_check"]).detailed_health_check())
+    _r19_issues_b = _r19_body_b.get("issues") or []
+    _r19_stale_issues_b = [i for i in _r19_issues_b
+                           if "stale" in i.get("message", "").lower() and "rag_vectors" in i.get("component", "")]
+    check("r19_stale_alert_fires",
+          len(_r19_stale_issues_b) >= 1,
+          "Staleness alert must fire when maintenance was 900s ago (>600s)")
+    if _r19_stale_issues_b:
+        check("r19_stale_alert_has_seconds",
+              "900" in _r19_stale_issues_b[0]["message"] or ">600s" in _r19_stale_issues_b[0]["message"],
+              "Staleness alert message must reference elapsed time")
+
+    # --- Scenario C: Recovery (stale → recent) → alert clears ---
+    with _DB_MAINT_LOCK:
+        _db_maint_last_success[_r19_db_key] = _r19_time.time() - 10  # 10s ago (recovered)
+    _r19_body_c = _r19_asyncio.get_event_loop().run_until_complete(
+        __import__("server_final", fromlist=["detailed_health_check"]).detailed_health_check())
+    _r19_issues_c = _r19_body_c.get("issues") or []
+    _r19_stale_issues_c = [i for i in _r19_issues_c
+                           if "stale" in i.get("message", "").lower() and "rag_vectors" in i.get("component", "")]
+    check("r19_stale_alert_clears_on_recovery",
+          len(_r19_stale_issues_c) == 0,
+          "Staleness alert must clear when maintenance recovers (10s ago)")
+
+    # --- Scenario D: Never completed + uptime > 600s → initial-phase alert ---
+    with _DB_MAINT_LOCK:
+        if _r19_db_key in _db_maint_last_success:
+            del _db_maint_last_success[_r19_db_key]
+    import tools.shell_execute as _r19_shell_mod
+    _r19_orig_pstart = _r19_shell_mod._PROCESS_START_TIME
+    _r19_shell_mod._PROCESS_START_TIME = _r19_time.time() - 1200  # pretend 20min uptime
+    _r19_body_d = _r19_asyncio.get_event_loop().run_until_complete(
+        __import__("server_final", fromlist=["detailed_health_check"]).detailed_health_check())
+    _r19_issues_d = _r19_body_d.get("issues") or []
+    _r19_never_issues_d = [i for i in _r19_issues_d
+                           if "never completed" in i.get("message", "").lower() and "rag_vectors" in i.get("component", "")]
+    check("r19_never_completed_alert_fires",
+          len(_r19_never_issues_d) >= 1,
+          "'Never completed' alert must fire when maintenance never succeeded and uptime >600s")
+
+    # --- Scenario E: Never completed + uptime < 600s → no alert (grace period) ---
+    _r19_shell_mod._PROCESS_START_TIME = _r19_time.time() - 120  # only 2min uptime
+    _r19_body_e = _r19_asyncio.get_event_loop().run_until_complete(
+        __import__("server_final", fromlist=["detailed_health_check"]).detailed_health_check())
+    _r19_issues_e = _r19_body_e.get("issues") or []
+    _r19_never_issues_e = [i for i in _r19_issues_e
+                           if "never completed" in i.get("message", "").lower() and "rag_vectors" in i.get("component", "")]
+    check("r19_no_alert_during_grace_period",
+          len(_r19_never_issues_e) == 0,
+          "No 'never completed' alert during startup grace period (uptime 120s < 600s)")
+
+    # Restore original state
+    _r19_shell_mod._PROCESS_START_TIME = _r19_orig_pstart
+    with _DB_MAINT_LOCK:
+        if _r19_orig_last_ok is not None:
+            _db_maint_last_success[_r19_db_key] = _r19_orig_last_ok
+        elif _r19_db_key in _db_maint_last_success:
+            del _db_maint_last_success[_r19_db_key]
+        _db_maint_fail_count[_r19_db_key] = _r19_orig_fails
+        _db_maint_ineffective[_r19_db_key] = _r19_orig_ineff
+else:
+    print("  ⚠️  rag_vectors.db not found — skipping behavioral tests (source inspection covers)")
+
 # ======================================================================
 # Summary
 # ======================================================================
