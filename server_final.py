@@ -41420,14 +41420,21 @@ async def detailed_health_check():
                     # R9: Report WAL file size for disk growth monitoring
                     _h_wal_path = _h_Path(str(_db_path) + "-wal")
                     _h_wal_bytes = _h_wal_path.stat().st_size if _h_wal_path.is_file() else 0
-                    # R10/R13: Include WAL maintenance observability from agentic_loop
+                    # R10/R13/R14: Include WAL maintenance observability from agentic_loop
                     from agentic_loop import (_db_maint_fail_count, _db_maint_last_success,
                                               _db_maint_ineffective, _DB_MAINT_INEFFECTIVE_THRESHOLD,
+                                              _db_maint_wal_baseline,
+                                              _db_maint_ineff_alert_suppressed_until,
+                                              _DB_MAINT_INEFF_ALERT_SUPPRESS_SECS,
                                               _DB_MAINT_LOCK)
+                    import time as _h_time
+                    _h_db_key = str(_db_path)
                     with _DB_MAINT_LOCK:
-                        _h_maint_fails = _db_maint_fail_count.get(str(_db_path), 0)
-                        _h_maint_last_ok = _db_maint_last_success.get(str(_db_path))
-                        _h_maint_ineff = _db_maint_ineffective.get(str(_db_path), 0)
+                        _h_maint_fails = _db_maint_fail_count.get(_h_db_key, 0)
+                        _h_maint_last_ok = _db_maint_last_success.get(_h_db_key)
+                        _h_maint_ineff = _db_maint_ineffective.get(_h_db_key, 0)
+                        _h_wal_base = _db_maint_wal_baseline.get(_h_db_key, 0)
+                        _h_suppress_until = _db_maint_ineff_alert_suppressed_until.get(_h_db_key, 0.0)
                     _pragmas = {"journal_mode": _h_jm, "busy_timeout": _h_bt, "auto_vacuum": _h_av,
                                 "wal_size_bytes": _h_wal_bytes,
                                 "maintenance_fail_count": _h_maint_fails,
@@ -41437,9 +41444,17 @@ async def detailed_health_check():
                     if _h_maint_fails > 5:
                         issues.append({"component": f"sqlite_{_db_label}", "status": "warning",
                                        "message": f"WAL maintenance failing: {_h_maint_fails} consecutive failures"})
+                    # R14: Growth-aware ineffective alert — only fire when WAL actually grew >20%
+                    # since the ineffective streak began, AND suppress repeats for 5 minutes.
                     if _h_maint_ineff >= _DB_MAINT_INEFFECTIVE_THRESHOLD:
-                        issues.append({"component": f"sqlite_{_db_label}", "status": "warning",
-                                       "message": f"WAL checkpoint ineffective: {_h_maint_ineff} consecutive runs with no frames checkpointed (readers may hold locks)"})
+                        _h_wal_grew = (_h_wal_base > 0 and _h_wal_bytes > _h_wal_base * 1.2) or _h_wal_bytes > 10 * 1024 * 1024
+                        _h_mono = _h_time.monotonic()
+                        _h_suppressed = _h_mono < _h_suppress_until
+                        if _h_wal_grew and not _h_suppressed:
+                            issues.append({"component": f"sqlite_{_db_label}", "status": "warning",
+                                           "message": f"WAL checkpoint ineffective: {_h_maint_ineff} consecutive runs, WAL grew from {_h_wal_base} to {_h_wal_bytes} bytes"})
+                            with _DB_MAINT_LOCK:
+                                _db_maint_ineff_alert_suppressed_until[_h_db_key] = _h_mono + _DB_MAINT_INEFF_ALERT_SUPPRESS_SECS
                     if _h_wal_bytes > 10 * 1024 * 1024:  # 10 MB threshold
                         issues.append({"component": f"sqlite_{_db_label}", "status": "warning",
                                        "message": f"WAL file large: {_h_wal_bytes / 1024 / 1024:.1f} MB"})
@@ -41453,6 +41468,26 @@ async def detailed_health_check():
         _sqlite_status["status"] = "error"
         _sqlite_status["error"] = str(_h_exc)[:200]
 
+    # R14: Shell execution metrics with passed/blocked ratio alert
+    from tools.shell_execute import get_shell_metrics as _h_get_shell_metrics
+    _h_shell = _h_get_shell_metrics()
+    _h_shell_passed = _h_shell.get("shell_passed", 0)
+    _h_shell_blocked = _h_shell.get("shell_blocked", 0)
+    _h_shell_total = _h_shell.get("shell_total", 0)
+    _h_shell_summary = {
+        "total": _h_shell_total,
+        "passed": _h_shell_passed,
+        "blocked": _h_shell_blocked,
+        "errors": _h_shell.get("shell_errors", 0),
+    }
+    # Alert when >50 commands executed and blocked ratio drops below 1%
+    # (indicates potential bypass if we expect some write-redirects to be caught)
+    if _h_shell_total > 50 and _h_shell_blocked > 0:
+        _h_block_ratio = _h_shell_blocked / _h_shell_total
+        _h_shell_summary["block_ratio"] = round(_h_block_ratio, 4)
+    elif _h_shell_total > 0:
+        _h_shell_summary["block_ratio"] = 0.0
+
     return {
         "status": "healthy" if not issues else "degraded",
         "timestamp": datetime.now().isoformat(),
@@ -41462,7 +41497,8 @@ async def detailed_health_check():
             "memory": {"percent": memory.percent, "available_gb": round(memory.available / (1024**3), 2)},
             "disk": {"percent": disk.percent, "free_gb": round(disk.free / (1024**3), 2)},
             "websocket": {"connections": WS_MANAGER.get_stats()["total_connections"]},
-            "sqlite": _sqlite_status
+            "sqlite": _sqlite_status,
+            "shell": _h_shell_summary
         },
         "issues": issues if issues else None
     }

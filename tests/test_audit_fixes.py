@@ -2444,6 +2444,36 @@ check("r13_record_increments_passed",
       "_SHELL_PASSED" in _r13_se_record_src,
       "_record_execution must increment _SHELL_PASSED counter")
 
+# ── R14: Growth-aware ineffective alert + suppression ──
+print("\n  -- Audit R14: Growth-aware ineffective alert --")
+_r14_src = _ct_inspect.getsource(_ct_al._open_db)
+check("r14_tracks_wal_baseline",
+      "_db_maint_wal_baseline" in _r14_src,
+      "_open_db must record WAL size at start of ineffective streak")
+check("r14_clears_baseline_on_success",
+      '_db_maint_wal_baseline.pop(' in _r14_src,
+      "_open_db must clear WAL baseline when checkpoint succeeds")
+check("r14_has_suppress_state",
+      "_db_maint_ineff_alert_suppressed_until" in _r14_src or "_DB_MAINT_INEFF_ALERT_SUPPRESS_SECS" in _r14_src,
+      "_open_db must reference alert suppression state")
+
+print("\n  -- Audit R14: /health/detailed growth-aware alert --")
+_r14_dhc_src = _ct_inspect.getsource(__import__("server_final", fromlist=["detailed_health_check"]).detailed_health_check)
+check("r14_health_checks_wal_growth",
+      "1.2" in _r14_dhc_src or "wal_grew" in _r14_dhc_src,
+      "/health/detailed must check WAL growth (>20%) before alerting ineffective")
+check("r14_health_has_suppression",
+      "_suppress" in _r14_dhc_src.lower() or "SUPPRESS" in _r14_dhc_src,
+      "/health/detailed must suppress repeated ineffective alerts")
+
+print("\n  -- Audit R14: /health/detailed shell metrics --")
+check("r14_health_has_shell_component",
+      "shell" in _r14_dhc_src and "block_ratio" in _r14_dhc_src,
+      "/health/detailed must include shell metrics component with block_ratio")
+check("r14_health_shell_passed",
+      "shell_passed" in _r14_dhc_src or "_h_shell_passed" in _r14_dhc_src,
+      "/health/detailed must expose shell passed count")
+
 # ======================================================================
 # Summary
 # ======================================================================

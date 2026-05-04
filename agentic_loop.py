@@ -1358,6 +1358,9 @@ _db_maint_fail_count: dict[str, int] = {}  # path_str → consecutive failure co
 _db_maint_last_success: dict[str, float] = {}  # path_str → last success wall-clock time
 _db_maint_ineffective: dict[str, int] = {}  # path_str → consecutive ineffective checkpoint count
 _DB_MAINT_INEFFECTIVE_THRESHOLD = 5  # alert in /health after N consecutive ineffective checkpoints
+_db_maint_wal_baseline: dict[str, int] = {}  # path_str → WAL size (bytes) when ineffective streak began
+_db_maint_ineff_alert_suppressed_until: dict[str, float] = {}  # path_str → monotonic time
+_DB_MAINT_INEFF_ALERT_SUPPRESS_SECS = 300.0  # suppress repeated ineffective alerts for 5 minutes
 
 
 def _open_db(path: Path):
@@ -1430,14 +1433,27 @@ def _open_db(path: Path):
                         _cp_log, _cp_done = _cp_row[1], _cp_row[2]
                         if _cp_log > 0 and _cp_done == 0:
                             _cp_ineffective = True
+                    # R14: Track WAL size at ineffective streak start for growth-aware alerting.
+                    _cur_wal_size = 0
+                    try:
+                        _wal_p = Path(_path_key + "-wal")
+                        if _wal_p.is_file():
+                            _cur_wal_size = _wal_p.stat().st_size
+                    except OSError:
+                        pass
                     with _DB_MAINT_LOCK:
                         _db_maint_fail_count[_path_key] = 0
                         _db_maint_last_success[_path_key] = _time_mod_db.time()
                         if _cp_ineffective:
-                            _ie = _db_maint_ineffective.get(_path_key, 0) + 1
+                            _prev_ie = _db_maint_ineffective.get(_path_key, 0)
+                            _ie = _prev_ie + 1
                             _db_maint_ineffective[_path_key] = _ie
+                            if _prev_ie == 0:
+                                _db_maint_wal_baseline[_path_key] = _cur_wal_size
                         else:
                             _db_maint_ineffective[_path_key] = 0
+                            _db_maint_wal_baseline.pop(_path_key, None)
+                            _db_maint_ineff_alert_suppressed_until.pop(_path_key, None)
                     if _cp_ineffective:
                         _ie_count = _db_maint_ineffective.get(_path_key, 0)
                         if _ie_count <= 3 or _ie_count % 10 == 0:
