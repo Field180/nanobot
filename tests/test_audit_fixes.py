@@ -2712,6 +2712,68 @@ if _r19_db_path.is_file():
 else:
     print("  ⚠️  rag_vectors.db not found — skipping behavioral tests (source inspection covers)")
 
+# ── R20: Runbook + Grafana dashboard operational completeness ──
+print("\n  -- Audit R20: RUNBOOK.md --")
+_r20_runbook_path = _r16_os.path.join(_r16_os.path.dirname(__file__), "..", "deploy", "prometheus", "RUNBOOK.md")
+check("r20_runbook_exists",
+      _r16_os.path.isfile(_r20_runbook_path),
+      "deploy/prometheus/RUNBOOK.md must exist")
+if _r16_os.path.isfile(_r20_runbook_path):
+    _r20_runbook = open(_r20_runbook_path).read()
+    # Verify all 7 alerts are documented
+    _r20_alert_names = [
+        "NanobotWalSizeCritical", "NanobotWalSizeWarning", "NanobotWalMaintenanceFailing",
+        "NanobotWalCheckpointIneffective", "NanobotWalMaintenanceStale",
+        "NanobotShellBlockRatioLow", "NanobotShellErrorRateHigh"
+    ]
+    _r20_missing_alerts = [a for a in _r20_alert_names if a not in _r20_runbook]
+    check("r20_runbook_covers_all_alerts",
+          len(_r20_missing_alerts) == 0,
+          f"Runbook must document all 7 alerts (missing: {_r20_missing_alerts})")
+    check("r20_runbook_has_diagnosis",
+          _r20_runbook.count("### Diagnosis") >= 7,
+          "Each alert section must include a Diagnosis subsection")
+    check("r20_runbook_has_resolution",
+          _r20_runbook.count("### Resolution") >= 7,
+          "Each alert section must include a Resolution subsection")
+    check("r20_runbook_has_escalation",
+          _r20_runbook.count("### Escalation") >= 7,
+          "Each alert section must include an Escalation subsection")
+
+print("\n  -- Audit R20: Grafana dashboard --")
+_r20_dashboard_path = _r16_os.path.join(_r16_os.path.dirname(__file__), "..", "deploy", "grafana", "nanobot-dashboard.json")
+check("r20_dashboard_exists",
+      _r16_os.path.isfile(_r20_dashboard_path),
+      "deploy/grafana/nanobot-dashboard.json must exist")
+if _r16_os.path.isfile(_r20_dashboard_path):
+    import json as _r20_json
+    with open(_r20_dashboard_path) as _r20_f:
+        _r20_dash = _r20_json.load(_r20_f)
+    _r20_panels = _r20_dash.get("panels", [])
+    check("r20_dashboard_has_panels",
+          len(_r20_panels) >= 8,
+          f"Dashboard must have at least 8 panels (found {len(_r20_panels)})")
+    _r20_panel_titles = [p.get("title", "") for p in _r20_panels]
+    check("r20_dashboard_has_wal_size",
+          any("WAL" in t and "Size" in t for t in _r20_panel_titles),
+          "Dashboard must include WAL Size panel")
+    check("r20_dashboard_has_shell_rate",
+          any("Shell" in t and "Rate" in t for t in _r20_panel_titles),
+          "Dashboard must include Shell Rate panel")
+    check("r20_dashboard_has_staleness",
+          any("stale" in t.lower() or "last_check" in t.lower() for t in _r20_panel_titles),
+          "Dashboard must include WAL staleness panel")
+    check("r20_dashboard_has_latency",
+          any("Latency" in t or "latency" in t for t in _r20_panel_titles),
+          "Dashboard must include Shell Latency panel")
+    # Validate JSON structure
+    check("r20_dashboard_valid_schema",
+          "schemaVersion" in _r20_dash and "uid" in _r20_dash,
+          "Dashboard must have schemaVersion and uid fields")
+    check("r20_dashboard_has_datasource_input",
+          any(i.get("type") == "datasource" for i in _r20_dash.get("__inputs", [])),
+          "Dashboard must define a datasource input variable for portability")
+
 # ======================================================================
 # Summary
 # ======================================================================
