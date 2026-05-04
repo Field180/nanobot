@@ -1,0 +1,62 @@
+# Nanobot Prometheus Alert Rules — Example Template
+# Adjust thresholds to match your deployment environment.
+# Usage: include this file in your prometheus.yml rule_files section.
+
+groups:
+  - name: nanobot_wal
+    rules:
+      - alert: NanobotWalSizeCritical
+        expr: nanobot_wal_size_bytes > 50 * 1024 * 1024
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "WAL file exceeds 50 MB on {{ $labels.db }}"
+          description: "WAL checkpoint may be blocked. Current size: {{ $value | humanize1024 }}B. Check for long-running read transactions."
+
+      - alert: NanobotWalSizeWarning
+        expr: nanobot_wal_size_bytes > 10 * 1024 * 1024
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "WAL file exceeds 10 MB on {{ $labels.db }}"
+          description: "WAL growing steadily. Current size: {{ $value | humanize1024 }}B."
+
+      - alert: NanobotWalMaintenanceFailing
+        expr: nanobot_wal_maint_fail_count > 5
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "WAL maintenance failing on {{ $labels.db }}"
+          description: "{{ $value }} consecutive maintenance failures. Check SQLite connectivity and disk I/O."
+
+      - alert: NanobotWalCheckpointIneffective
+        expr: nanobot_wal_maint_ineffective_count >= 5
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "WAL checkpoint persistently ineffective on {{ $labels.db }}"
+          description: "{{ $value }} consecutive ineffective checkpoints. Active readers may be holding shared locks."
+
+  - name: nanobot_shell
+    rules:
+      - alert: NanobotShellBlockRatioLow
+        expr: (nanobot_shell_blocked / nanobot_shell_total) < 0.01 and nanobot_shell_total > 100
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Shell command block ratio below 1%"
+          description: "Only {{ $value | humanizePercentage }} of commands blocked. Expected some write-redirect interceptions. Investigate if LLM is bypassing safety checks."
+
+      - alert: NanobotShellErrorRateHigh
+        expr: rate(nanobot_shell_errors[5m]) / rate(nanobot_shell_total[5m]) > 0.3
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Shell command error rate exceeds 30%"
+          description: "High error rate may indicate infrastructure issues or problematic command patterns."

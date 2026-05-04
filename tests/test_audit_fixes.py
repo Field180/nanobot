@@ -2502,6 +2502,34 @@ check("r15_prom_wal_fail",
       "nanobot_wal_maint_fail_count" in _r15_metrics_src,
       "/api/metrics must export nanobot_wal_maint_fail_count gauge per DB")
 
+# ── R16: Deviation-based baseline refresh + Prometheus alerts template ──
+print("\n  -- Audit R16: Deviation-based WAL baseline refresh --")
+_r16_src = _ct_inspect.getsource(_ct_al._open_db)
+check("r16_deviation_refresh",
+      "1.5" in _r16_src and "_bl" in _r16_src,
+      "_open_db must refresh baseline when WAL deviates >50% from baseline (deviation-based)")
+check("r16_deviation_coexists_with_periodic",
+      "% _DB_MAINT_INEFFECTIVE_THRESHOLD" in _r16_src and "1.5" in _r16_src,
+      "_open_db must have both periodic (modulo) and deviation-based baseline refresh")
+
+print("\n  -- Audit R16: Prometheus alerts template --")
+import os as _r16_os
+_r16_alerts_path = _r16_os.path.join(_r16_os.path.dirname(__file__), "..", "deploy", "prometheus", "alerts.yml")
+check("r16_alerts_yml_exists",
+      _r16_os.path.isfile(_r16_alerts_path),
+      "deploy/prometheus/alerts.yml must exist as Prometheus alert rules template")
+if _r16_os.path.isfile(_r16_alerts_path):
+    _r16_alerts_content = open(_r16_alerts_path).read()
+    check("r16_alerts_has_wal_size",
+          "NanobotWalSizeCritical" in _r16_alerts_content,
+          "alerts.yml must define NanobotWalSizeCritical rule")
+    check("r16_alerts_has_ineffective",
+          "NanobotWalCheckpointIneffective" in _r16_alerts_content,
+          "alerts.yml must define NanobotWalCheckpointIneffective rule")
+    check("r16_alerts_has_shell_ratio",
+          "NanobotShellBlockRatioLow" in _r16_alerts_content,
+          "alerts.yml must define NanobotShellBlockRatioLow rule")
+
 # ======================================================================
 # Summary
 # ======================================================================

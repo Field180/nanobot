@@ -1454,6 +1454,13 @@ def _open_db(path: Path):
                                 # R15: Refresh baseline every N ineffective runs to avoid
                                 # stale growth calculations during long streaks.
                                 _db_maint_wal_baseline[_path_key] = _cur_wal_size
+                            else:
+                                # R16: Deviation-based refresh — if WAL has grown >50%
+                                # from baseline but hasn't yet crossed the 20% alert
+                                # threshold window, refresh now to track recent growth.
+                                _bl = _db_maint_wal_baseline.get(_path_key, 0)
+                                if _bl > 0 and _cur_wal_size > _bl * 1.5:
+                                    _db_maint_wal_baseline[_path_key] = _cur_wal_size
                         else:
                             _db_maint_ineffective[_path_key] = 0
                             _db_maint_wal_baseline.pop(_path_key, None)
