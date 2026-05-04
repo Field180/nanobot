@@ -17,7 +17,7 @@ DEPRECATION_CEILING := 145
 # This prevents the ceiling from becoming a stale "forever" number.
 DEPRECATION_CEILING_MAX_SLACK := 20
 
-.PHONY: help install-hooks test test-fast test-deprecations test-deprecations-strict check check-docs security-audit ci clean test-ratchet git-audit
+.PHONY: help install-hooks test test-fast test-audit test-deprecations test-deprecations-strict check check-docs security-audit ci clean test-ratchet git-audit
 # Preserve non-zero exit codes through pipes (otherwise `cmd | grep` masks failure)
 SHELL := /bin/bash
 .SHELLFLAGS := -o pipefail -c
@@ -26,6 +26,7 @@ SHELL := /bin/bash
 help:
 	@echo "Nanobot Local CI Targets:"
 	@echo "  make test          - Run full test suite + safety-check"
+	@echo "  make test-audit    - Run audit fix tests (standalone, hard-fail on any failure)"
 	@echo "  make test-fast     - Run only fast unit tests (skip integration)"
 	@echo "  make test-deprecations - Run tests with SessionStore deprecation warnings enabled (advisory)"
 	@echo "  make test-deprecations-strict - Same as above but FAILS CI on any direct-access warning"
@@ -112,8 +113,17 @@ test-deprecations-strict:
 		$(PYTHON) -W error::DeprecationWarning -m unittest discover -s tests -p "test_*.py"
 	@echo "No direct-access violations detected."
 
+# Audit fix tests — runs as standalone script so sys.exit(1) fires on failure.
+# This enforces alerts↔Runbook sync, Dashboard↔metrics sync, and all R16-R21 checks.
+test-audit:
+	@echo "═══════════════════════════════════════════════════════════"
+	@echo "Running audit fix tests (hard-fail mode)..."
+	@echo "═══════════════════════════════════════════════════════════"
+	$(PYTHON) tests/test_audit_fixes.py
+	@echo "✓ Audit fix tests passed."
+
 # Full validation pipeline (equivalent to CI gate)
-check: test test-deprecations check-docs
+check: test test-audit test-deprecations check-docs
 	@echo "═══════════════════════════════════════════════════════════"
 	@echo "Full validation complete."
 	@echo "═══════════════════════════════════════════════════════════"
@@ -122,7 +132,7 @@ check: test test-deprecations check-docs
 # CI gate: runs tests + deprecation ratchet check.
 # The ratchet prevents new violations from being introduced.
 # After all violations reach 0, switch to test-deprecations-strict.
-ci: test test-deprecations safety-check git-audit
+ci: test test-audit test-deprecations safety-check git-audit
 	@echo "CI gate passed."
 
 # Documentation consistency check (informational warnings)
