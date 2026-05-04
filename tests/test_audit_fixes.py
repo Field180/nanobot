@@ -2173,6 +2173,9 @@ check("r10_has_interval_guard",
 check("r11_has_wal_size_trigger",
       "_DB_MAINT_WAL_THRESHOLD" in _r10_open_db_src,
       "_open_db must check WAL file size to bypass interval for load-adaptive maintenance")
+check("r12_size_trigger_cooldown",
+      "_DB_MAINT_INTERVAL / 3" in _r10_open_db_src,
+      "_open_db must apply cooldown (INTERVAL/3) on WAL-size-triggered maintenance path")
 check("r10_has_checkpoint",
       "wal_checkpoint(PASSIVE)" in _r10_open_db_src,
       "_open_db must execute PRAGMA wal_checkpoint(PASSIVE)")

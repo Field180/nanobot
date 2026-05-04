@@ -27,7 +27,7 @@ Tracks deferred items from audit rounds. Items are classified by root cause:
 | ED-4 | Metrics/tracing system — no Prometheus/OpenTelemetry integration | Medium | R4 | Deferred: requires infra beyond code |
 | ED-5 | Structured logging — WARNING logs lack structured fields | Low | R5 | Deferred: functional for current scale |
 | ED-6 | Code coverage reporting — no `coverage.py` integration | Medium | R4-R5 | Deferred: 1735+ tests pass but % unknown |
-| ED-7 | write-redirect bypass via inline interpreters (`python -c`, `perl -e`) — regex cannot detect | Low | R11 | Deferred: evaluate OS-level restrictions (seccomp/namespace) in future audit. Current regex is documented as best-effort guardrail, not security boundary |
+| ED-7 | write-redirect bypass via inline interpreters (`python -c`, `perl -e`) — regex cannot detect | Low | R11→R12 | Deferred with decision criteria: **Introduce OS-level isolation (seccomp/namespace) IF** (a) LLM generates bypass commands in ≥3 real user sessions, OR (b) shell_execute is exposed to untrusted multi-tenant input. **Retain regex-only IF** single-tenant local deployment remains the only use case. Decision owner: project maintainer. Review at next audit. |
 
 ## Resolved Items
 
@@ -51,8 +51,8 @@ Tracks deferred items from audit rounds. Items are classified by root cause:
 | ~~TD-P~~ | WAL file growth invisible to monitoring | R9 | `/health/detailed` reports `wal_size_bytes` per DB, alerts >10 MB | AST-structural: r9_health_has_wal_size |
 | ~~TD-Q~~ | `shell_execute` allows file-write redirections | R9 | `_detect_write_redirect` blocks `>`, `>>`, `tee`, `dd of=` (excludes `/dev/null`, fd redirects); suggests `file_edit`. **Coverage limits documented**: cp/mv, heredoc, fd indirection, inline interpreters not detected (by design) | Behavioral: 9 pattern tests + r9_execute_blocks_write_redirect |
 | ~~TD-R~~ | WAL maintenance failure not observable | R10 | Failures logged as WARNING (first 3 + every 10th); `/health/detailed` exposes `maintenance_fail_count` + `maintenance_last_success` per DB; alerts at >5 consecutive failures | Behavioral: r10_maint_failure_logged; AST-structural: r10_health_has_maint_fields |
-| ~~TD-S~~ | checkpoint/vacuum runs per-connection (unnecessary overhead) | R10→R11 | Hybrid strategy: time-driven (`_DB_MAINT_INTERVAL=30s`) + WAL-size-driven (`_DB_MAINT_WAL_THRESHOLD=1MB` bypasses interval). Adapts to write-heavy workloads | Behavioral: r10_time_driven_skip + r10_time_driven_runs + r11_wal_size_bypass |
-| ~~TD-T~~ | git initial commit contained build artifacts and test residuals | R11 | `git rm --cached` removed 430+ `__pycache__/`, `.nanobot_state/`, `*.bak`, `*.lock` files; `.gitignore` expanded to prevent re-tracking | Verified: `git ls-files --cached \| grep __pycache__` returns 0 |
+| ~~TD-S~~ | checkpoint/vacuum runs per-connection (unnecessary overhead) | R10→R12 | Hybrid strategy: time-driven (`_DB_MAINT_INTERVAL=30s`) + WAL-size-driven (`_DB_MAINT_WAL_THRESHOLD=1MB`) with 10s cooldown on size path to prevent every-connection spam on stale large WAL | Behavioral: r10_time_driven_skip + r10_time_driven_runs + r11_wal_size_bypass + r12_size_trigger_cooldown |
+| ~~TD-T~~ | git initial commit contained build artifacts and test residuals | R11→R12 | `git rm --cached` removed 430+ files; `.gitignore` uses `**/` prefix for nested matching + `test_u3_result*.json` pattern; `git gc --aggressive` reclaims object storage | Verified: `git ls-files --cached \| grep __pycache__` returns 0 |
 
 ## Policy
 
@@ -71,9 +71,15 @@ Items resolved before R8 (marked "pre-R8 standard") retain their original verifi
 | Round | Errata | Root Cause | Resolution |
 |-------|--------|------------|------------|
 | R6 (Audit) | Two "致命" findings (connection leak + implicit file creation in `/health/detailed`) were false positives | **Root cause indeterminate**: without git history, cannot distinguish between (a) auditor did not see existing `try/finally` + `is_file()` context, or (b) protections were added after audit and retroactively claimed as pre-existing. Both possibilities are recorded. | R8 added `mode=ro` URI as defense-in-depth regardless of root cause; R10 initialized git repo to prevent future ambiguity |
-| R6→R8 impact | R6 misreport referenced in R7/R8 audit discussions as evidence of "connection leak" risk, which motivated the `mode=ro` URI hardening and `@contextmanager` exception propagation test (TD-M). **Net impact: positive** — the false positive drove defense-in-depth improvements that would not have been prioritized otherwise. No unnecessary code removals resulted from the misreport. | Retroactive assessment: no code was damaged by acting on the false positive. | No corrective action needed beyond existing defense-in-depth. |
+| R6→R8 impact | R6 misreport referenced in R7/R8 audit discussions as evidence of "connection leak" risk, which motivated the `mode=ro` URI hardening and `@contextmanager` exception propagation test (TD-M). **Net impact: neutral to negative** — defense-in-depth improvements (`mode=ro`, TD-M) have standalone value, but were prioritized based on a false premise. Opportunity cost: audit time spent on false positives was unavailable for real issues (e.g., WAL strategy, write-redirect bypass). The misreport also set a precedent where unfounded "致命" severity distorts risk prioritization. | Retroactive assessment: no production code was damaged; defense-in-depth code adds marginal maintenance burden (~20 LoC) but no runtime risk. | Existing defense-in-depth retained (removal would create churn for no benefit). |
 
 **Process improvement**: All audit findings must reference exact line numbers. Developer responses must include the original code at those lines. Starting R10, this workspace is git-tracked — `git blame` provides the authoritative evidence chain for all future disputes.
+
+### Audit Test Ownership
+
+| File | Owner | Purpose | Update trigger |
+|------|-------|---------|----------------|
+| `tests/test_audit_fixes.py` | Project maintainer (hand-maintained) | Regression tests for audit-identified issues | Each audit round that introduces code changes |
 
 ### Escalation / De-escalation Criteria
 

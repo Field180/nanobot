@@ -1,7 +1,8 @@
-__pycache__/
+**/__pycache__/
 *.pyc
 *.pyo
 .git/
-.nanobot_state/
+**/.nanobot_state/
 *.bak
 *.lock
+test_u3_result*.json

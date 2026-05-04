@@ -1392,19 +1392,22 @@ def _open_db(path: Path):
                 logger.warning("[SQLite] busy_timeout=%d (expected 5000) on %s", _bt, path)
             yield conn
         finally:
-            # R11: Hybrid WAL maintenance — time-driven OR WAL-size-driven.
+            # R12: Hybrid WAL maintenance — time-driven OR WAL-size-driven.
             # Time: at most once per _DB_MAINT_INTERVAL (avoids per-query overhead).
-            # Size: immediate if WAL file > _DB_MAINT_WAL_THRESHOLD (adapts to load).
+            # Size: if WAL > _DB_MAINT_WAL_THRESHOLD, use shorter cooldown
+            #   (_DB_MAINT_INTERVAL / 3 ≈ 10s) to adapt to load without spamming
+            #   maintenance on every connection when WAL is stale and >1MB.
             _path_key = str(path)
             _now = _time_mod_db.monotonic()
             _should_maint = False
             with _DB_MAINT_LOCK:
                 _last = _db_maint_last.get(_path_key, 0.0)
-                _interval_elapsed = (_now - _last >= _DB_MAINT_INTERVAL)
-            if _interval_elapsed:
+                _elapsed = _now - _last
+            if _elapsed >= _DB_MAINT_INTERVAL:
                 _should_maint = True
-            else:
-                # Check WAL file size — bypass interval if WAL is large
+            elif _elapsed >= _DB_MAINT_INTERVAL / 3:
+                # Size-driven with cooldown — prevents every-connection spam
+                # on stale large WAL while still adapting to write-heavy loads
                 try:
                     _wal_path = Path(_path_key + "-wal")
                     if _wal_path.is_file() and _wal_path.stat().st_size > _DB_MAINT_WAL_THRESHOLD:
