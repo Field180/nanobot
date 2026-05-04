@@ -41,6 +41,15 @@ groups:
           summary: "WAL checkpoint persistently ineffective on {{ $labels.db }}"
           description: "{{ $value }} consecutive ineffective checkpoints. Active readers may be holding shared locks."
 
+      - alert: NanobotWalMaintenanceStale
+        expr: nanobot_wal_maint_last_check_seconds > 600
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "WAL maintenance stale on {{ $labels.db }}"
+          description: "Last successful WAL maintenance was {{ $value | humanizeDuration }} ago. System may be idle or maintenance loop stuck."
+
   - name: nanobot_shell
     rules:
       - alert: NanobotShellBlockRatioLow

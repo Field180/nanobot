@@ -1693,6 +1693,14 @@ async def prometheus_metrics(request: Request):
             lines.append(f'# HELP nanobot_wal_maint_ineffective_count Consecutive ineffective WAL checkpoints.')
             lines.append(f'# TYPE nanobot_wal_maint_ineffective_count gauge')
             lines.append(f'nanobot_wal_maint_ineffective_count{{db="{_m_label}"}} {_m_ineff}')
+            # R17: Seconds since last successful WAL maintenance (staleness gauge)
+            from agentic_loop import _db_maint_last_success as _m_last_ok
+            import time as _m_time
+            _m_last_ok_ts = _m_last_ok.get(_m_key)
+            _m_age = _m_time.time() - _m_last_ok_ts if _m_last_ok_ts is not None else -1
+            lines.append(f'# HELP nanobot_wal_maint_last_check_seconds Seconds since last successful WAL maintenance.')
+            lines.append(f'# TYPE nanobot_wal_maint_last_check_seconds gauge')
+            lines.append(f'nanobot_wal_maint_last_check_seconds{{db="{_m_label}"}} {_m_age:.1f}')
     except Exception:
         pass
     lines.append("")
@@ -41467,15 +41475,24 @@ async def detailed_health_check():
                         _h_maint_ineff = _db_maint_ineffective.get(_h_db_key, 0)
                         _h_wal_base = _db_maint_wal_baseline.get(_h_db_key, 0)
                         _h_suppress_until = _db_maint_ineff_alert_suppressed_until.get(_h_db_key, 0.0)
+                    # R17: Compute seconds since last successful WAL maintenance for staleness detection
+                    _h_maint_age_secs = None
+                    if _h_maint_last_ok is not None:
+                        _h_maint_age_secs = round(_h_time.time() - _h_maint_last_ok, 1)
                     _pragmas = {"journal_mode": _h_jm, "busy_timeout": _h_bt, "auto_vacuum": _h_av,
                                 "wal_size_bytes": _h_wal_bytes,
                                 "maintenance_fail_count": _h_maint_fails,
                                 "maintenance_last_success": _h_maint_last_ok,
+                                "maintenance_last_check_seconds": _h_maint_age_secs,
                                 "maintenance_ineffective_count": _h_maint_ineff}
                     _sqlite_status["pragmas"][_db_label] = _pragmas
                     if _h_maint_fails > 5:
                         issues.append({"component": f"sqlite_{_db_label}", "status": "warning",
                                        "message": f"WAL maintenance failing: {_h_maint_fails} consecutive failures"})
+                    # R17: WAL maintenance staleness alert — detect idle-period monitoring gaps
+                    if _h_maint_age_secs is not None and _h_maint_age_secs > 600:
+                        issues.append({"component": f"sqlite_{_db_label}", "status": "warning",
+                                       "message": f"WAL maintenance stale: last success {_h_maint_age_secs:.0f}s ago (>600s)"})
                     # R14: Growth-aware ineffective alert — only fire when WAL actually grew >20%
                     # since the ineffective streak began, AND suppress repeats for 5 minutes.
                     if _h_maint_ineff >= _DB_MAINT_INEFFECTIVE_THRESHOLD:

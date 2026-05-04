@@ -2530,6 +2530,33 @@ if _r16_os.path.isfile(_r16_alerts_path):
           "NanobotShellBlockRatioLow" in _r16_alerts_content,
           "alerts.yml must define NanobotShellBlockRatioLow rule")
 
+# ── R17: WAL maintenance staleness detection ──
+print("\n  -- Audit R17: /health/detailed maintenance_last_check_seconds --")
+_r17_dhc_src = _ct_inspect.getsource(__import__("server_final", fromlist=["detailed_health_check"]).detailed_health_check)
+check("r17_health_has_maint_age",
+      "maintenance_last_check_seconds" in _r17_dhc_src,
+      "/health/detailed must include maintenance_last_check_seconds field")
+check("r17_health_staleness_alert",
+      "600" in _r17_dhc_src and "stale" in _r17_dhc_src.lower(),
+      "/health/detailed must alert when maintenance is stale (>600s)")
+
+print("\n  -- Audit R17: Prometheus staleness gauge --")
+_r17_metrics_src = _ct_inspect.getsource(__import__("server_final", fromlist=["prometheus_metrics"]).prometheus_metrics)
+check("r17_prom_maint_last_check",
+      "nanobot_wal_maint_last_check_seconds" in _r17_metrics_src,
+      "/api/metrics must export nanobot_wal_maint_last_check_seconds gauge")
+
+print("\n  -- Audit R17: alerts.yml staleness rule --")
+_r17_alerts_path = _r16_os.path.join(_r16_os.path.dirname(__file__), "..", "deploy", "prometheus", "alerts.yml")
+if _r16_os.path.isfile(_r17_alerts_path):
+    _r17_alerts_content = open(_r17_alerts_path).read()
+    check("r17_alerts_has_stale_rule",
+          "NanobotWalMaintenanceStale" in _r17_alerts_content,
+          "alerts.yml must define NanobotWalMaintenanceStale rule")
+    check("r17_alerts_stale_uses_metric",
+          "nanobot_wal_maint_last_check_seconds" in _r17_alerts_content,
+          "NanobotWalMaintenanceStale must reference nanobot_wal_maint_last_check_seconds metric")
+
 # ======================================================================
 # Summary
 # ======================================================================
