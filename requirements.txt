@@ -9,6 +9,8 @@ psutil>=5.9.0
 
 # SSH support (used by server_final.py for remote diagnostics)
 paramiko>=3.0.0
+# Paramiko requires pycryptodome for cryptographic primitives
+pycryptodome>=3.18.0
 
 # P6: Terminal UI
 rich>=13.0

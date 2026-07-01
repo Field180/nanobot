@@ -33,7 +33,8 @@ jobs:
           python3 -m pip install -r requirements.txt
 
       - name: Backend unit tests
-        run: make test
+        run: |
+          make test || (echo "=== Full test log: ===" && tail -100 /tmp/nanobot_test.log && exit 1)
 
       - name: Audit fix tests
         run: make test-audit
