@@ -317,6 +317,10 @@ class TestScanWorkspace(unittest.TestCase):
 class TestTuiIntegration(unittest.TestCase):
     """Test TUI project scanning integration."""
 
+    @unittest.skipUnless(
+        Path("/home/field/.nanobot/workspace").exists(),
+        "Requires /home/field/.nanobot/workspace (developer workspace)",
+    )
     def test_scan_project_function(self):
         from tui import _scan_project
         # Scan the actual workspace

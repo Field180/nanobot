@@ -11,6 +11,8 @@ psutil>=5.9.0
 paramiko>=3.0.0
 # Paramiko requires pycryptodome for cryptographic primitives
 pycryptodome>=3.18.0
+# FastAPI form data parsing (server_final exposes /upload endpoints)
+python-multipart>=0.0.9
 
 # P6: Terminal UI
 rich>=13.0
