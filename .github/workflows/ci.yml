@@ -45,7 +45,7 @@ jobs:
 
       - name: Backend unit tests
         run: |
-          make test || (echo "=== Full test log: ===" && tail -100 /tmp/nanobot_test.log && echo "=== setUpClass diagnostic (if present): ===" && cat /tmp/test_routes_registration_diag.txt 2>/dev/null && exit 1)
+          make test || (echo "=== Full test log: ===" && tail -100 /tmp/nanobot_test.log && exit 1)
 
       - name: Audit fix tests
         run: make test-audit

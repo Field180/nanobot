@@ -15,57 +15,23 @@ if str(WEB_UI_DIR) not in sys.path:
 
 
 class TestRouteRegistration(unittest.TestCase):
-    """Verify routers are mounted and respond to basic requests."""
+    """Verify routers are mounted and respond to basic requests.
+
+    Uses app.router.routes (not app.routes) to collect registered paths.
+    app.routes is a module-load snapshot in newer FastAPI versions and does
+    not reflect routes added via include_router() at runtime.
+    """
 
     @classmethod
     def setUpClass(cls):
-        import sys
         from server_final import app
         cls.app = app
-        paths_before = {r.path for r in app.routes if hasattr(r, 'path')}
-        # Diagnostic for CI: write to a known file so we can grep it later.
-        # stdout/stderr from setUpClass are unreliable in CI capture.
-        diag_path = "/tmp/test_routes_registration_diag.txt"
-        with open(diag_path, "w") as f:
-            f.write(f"paths_before={len(paths_before)}\n")
-            try:
-                from routes.changes import router as changes_router
-                from routes.safety import router as safety_router
-                from routes.rate_limit import router as rate_limit_router
-                from routes.permissions import router as permissions_router
-                from routes.dingtalk import router as dingtalk_router
-                from routes.advanced_ai import router as advanced_ai_router
-                from routes.v3_neuracore import router as v3_neuracore_router
-                from routes.feature_flags import router as feature_flags_router
-                f.write("all imports succeeded\n")
-                for name, r in [
-                    ("changes", changes_router),
-                    ("safety", safety_router),
-                    ("rate_limit", rate_limit_router),
-                    ("permissions", permissions_router),
-                    ("dingtalk", dingtalk_router),
-                    ("advanced_ai", advanced_ai_router),
-                    ("v3_neuracore", v3_neuracore_router),
-                    ("feature_flags", feature_flags_router),
-                ]:
-                    app.include_router(r)
-                    f.write(
-                        f"included {name}: "
-                        f"{len(r.routes)} routes, "
-                        f"sample={[x.path for x in r.routes[:3]]}\n"
-                    )
-            except Exception as e:
-                import traceback
-                f.write(f"import/include error: {type(e).__name__}: {e}\n")
-                f.write(traceback.format_exc())
-                raise
-        paths_after = {r.path for r in app.routes if hasattr(r, 'path')}
-        with open(diag_path, "a") as f:
-            f.write(f"paths_after={len(paths_after)}\n")
-            f.write(
-                f"permission_pending_in_after={('/api/permission/pending' in paths_after)}\n"
-            )
-        cls.registered_paths = paths_after
+        # Use app.router.routes to get the full route set. app.routes is a
+        # snapshot captured at module-load time in FastAPI 0.130+ and does
+        # not reflect include_router() calls made after import.
+        cls.registered_paths = {
+            r.path for r in cls.app.router.routes if hasattr(r, "path")
+        }
 
     # ── Changes router ──────────────────────────────────────
     def test_changes_pending_registered(self):
