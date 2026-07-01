@@ -4,6 +4,9 @@ fastapi>=0.100.0
 uvicorn>=0.20.0
 litellm>=1.0.0
 
+# System service (used by test_system_service for resource queries)
+psutil>=5.9.0
+
 # P6: Terminal UI
 rich>=13.0
 prompt_toolkit>=3.0
