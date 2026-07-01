@@ -46,13 +46,20 @@ help:
 
 # Full test suite (the gate that must pass before any commit)
 # safety-check runs automatically — security contracts are non-negotiable.
+# Logs to /tmp/nanobot_test.log for CI debugging, and also shows last 20 lines.
 test: safety-check
 	@echo "═══════════════════════════════════════════════════════════"
 	@echo "Running full test suite..."
 	@echo "═══════════════════════════════════════════════════════════"
-	$(PYTHON) -m unittest discover -s tests -p "test_*.py" -v 2>&1 | tail -20
+	$(PYTHON) -m unittest discover -s tests -p "test_*.py" -v 2>&1 | tee /tmp/nanobot_test.log | tail -20
 	@echo ""
-	@echo "If you see 'OK' above, all tests passed."
+	@if grep -qE "^FAILED \(|^OK$" /tmp/nanobot_test.log; then \
+		if grep -qE "^FAILED \(" /tmp/nanobot_test.log; then \
+			echo "❌ Tests failed. Full log: /tmp/nanobot_test.log"; \
+		else \
+			echo "✅ All tests passed."; \
+		fi; \
+	fi
 
 # Fast tests only (for rapid iteration)
 test-fast:
