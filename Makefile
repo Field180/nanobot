@@ -2,8 +2,13 @@
 # Run these targets before every commit to ensure quality.
 # No remote CI required — this provides local enforcement.
 
-PYTHON := /home/field/nanobotProjects/nanobot/.venv/bin/python3
-PIP := /home/field/nanobotProjects/nanobot/.venv/bin/pip
+# PYTHON/PIP can be overridden on the command line or via env vars.
+# Local dev defaults to the user's venv; CI overrides with bare `python3`/`pip`.
+# Examples:
+#   make test                                    # local venv
+#   PYTHON=python3 PIP=pip make test             # CI / containers
+PYTHON ?= /home/field/nanobotProjects/nanobot/.venv/bin/python3
+PIP ?= /home/field/nanobotProjects/nanobot/.venv/bin/pip
 
 # Deprecation violation ceiling — ratchet down as violations are fixed.
 # CI fails if the count exceeds this number, preventing new violations.
