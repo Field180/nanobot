@@ -26,18 +26,30 @@ class TestRouteRegistration(unittest.TestCase):
     def setUpClass(cls):
         from server_final import app
         cls.app = app
-        # Use app.router.routes to get the full route set. app.routes is a
-        # snapshot captured at module-load time in FastAPI 0.130+ and does
-        # not reflect include_router() calls made after import.
-        paths = {r.path for r in cls.app.router.routes if hasattr(r, "path")}
-        # Write diagnostic to /tmp so CI log tailing can surface it.
+        # Check app.routes (snapshot at import time)
+        routes_snapshot = {r.path for r in app.routes if hasattr(r, "path")}
+        # Check app.router.routes (actual mounted routes)
+        router_routes = {r.path for r in app.router.routes if hasattr(r, "path")}
+        # Write comprehensive diagnostic
         import sys
-        sys.stderr.write(f"[route_diag] total_paths={len(paths)} permission_pending={'/api/permission/pending' in paths}\n")
+        sys.stderr.write(
+            f"[route_diag] app.routes_snapshot={len(routes_snapshot)} "
+            f"app.router.routes={len(router_routes)} "
+            f"permission_pending_in_snapshot={'/api/permission/pending' in routes_snapshot} "
+            f"permission_pending_in_router={'/api/permission/pending' in router_routes}\n"
+        )
         sys.stderr.flush()
         with open("/tmp/route_diag.txt", "w") as f:
-            for p in sorted(paths):
+            f.write(f"app.routes_snapshot count={len(routes_snapshot)}\n")
+            f.write(f"app.router.routes count={len(router_routes)}\n")
+            f.write("--- app.routes_snapshot ---\n")
+            for p in sorted(routes_snapshot):
                 f.write(p + "\n")
-        cls.registered_paths = paths
+            f.write("--- app.router.routes ---\n")
+            for p in sorted(router_routes):
+                f.write(p + "\n")
+        # Prefer router_routes (the actual mount tree); fall back to snapshot.
+        cls.registered_paths = router_routes if len(router_routes) > len(routes_snapshot) else routes_snapshot
 
     # ── Changes router ──────────────────────────────────────
     def test_changes_pending_registered(self):
