@@ -29,9 +29,15 @@ class TestRouteRegistration(unittest.TestCase):
         # Use app.router.routes to get the full route set. app.routes is a
         # snapshot captured at module-load time in FastAPI 0.130+ and does
         # not reflect include_router() calls made after import.
-        cls.registered_paths = {
-            r.path for r in cls.app.router.routes if hasattr(r, "path")
-        }
+        paths = {r.path for r in cls.app.router.routes if hasattr(r, "path")}
+        # Write diagnostic to /tmp so CI log tailing can surface it.
+        import sys
+        sys.stderr.write(f"[route_diag] total_paths={len(paths)} permission_pending={'/api/permission/pending' in paths}\n")
+        sys.stderr.flush()
+        with open("/tmp/route_diag.txt", "w") as f:
+            for p in sorted(paths):
+                f.write(p + "\n")
+        cls.registered_paths = paths
 
     # ── Changes router ──────────────────────────────────────
     def test_changes_pending_registered(self):
