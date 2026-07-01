@@ -32,6 +32,15 @@ jobs:
           python3 -m pip install --upgrade pip
           python3 -m pip install -r requirements.txt
 
+      - name: Stage CI-only stubs for missing modules
+        run: |
+          # server_final.py inserts /home/field/.nanobot/workspace/tools into
+          # sys.path and imports unified_tool_parser from there. The real
+          # implementation lives on developer machines, not in this repo.
+          # Copy the local stub to where server_final.py expects it.
+          mkdir -p /home/field/.nanobot/workspace/tools
+          cp tools/unified_tool_parser.py /home/field/.nanobot/workspace/tools/unified_tool_parser.py
+
       - name: Backend unit tests
         run: |
           make test || (echo "=== Full test log: ===" && tail -100 /tmp/nanobot_test.log && exit 1)
