@@ -22,10 +22,13 @@ DEPRECATION_CEILING := 145
 # This prevents the ceiling from becoming a stale "forever" number.
 DEPRECATION_CEILING_MAX_SLACK := 20
 
-.PHONY: help install-hooks test test-fast test-audit test-deprecations test-deprecations-strict check check-docs security-audit ci clean test-ratchet git-audit
+.PHONY: help install-hooks test test-fast test-audit test-deprecations test-deprecations-strict check check-docs security-audit ci clean test-ratchet git-audit test-e2e
 # Preserve non-zero exit codes through pipes (otherwise `cmd | grep` masks failure)
 SHELL := /bin/bash
 .SHELLFLAGS := -o pipefail -c
+# Force unbuffered Python so print() in setUpClass is captured by CI logs.
+export PYTHONIOENCODING := utf-8
+export PYTHONUNBUFFERED := 1
 
 # Default: show help
 help:
