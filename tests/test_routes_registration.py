@@ -19,39 +19,30 @@ class TestRouteRegistration(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
-        import traceback
-        try:
-            from server_final import app
-            cls.app = app
-            # Re-register routes defensively. In CI containers
-            # routes.register_all_routes(app) silently drops ~96 paths
-            # (permission, changes, danger, sandbox, rate-limit, etc.) —
-            # root cause is unconfirmed but appears related to import
-            # ordering when unified_tool_parser is stubbed. We call each
-            # include_router directly here so failures show up clearly.
-            from routes.changes import router as changes_router
-            from routes.safety import router as safety_router
-            from routes.rate_limit import router as rate_limit_router
-            from routes.permissions import router as permissions_router
-            from routes.dingtalk import router as dingtalk_router
-            from routes.advanced_ai import router as advanced_ai_router
-            from routes.v3_neuracore import router as v3_neuracore_router
-            from routes.feature_flags import router as feature_flags_router
-            for r in [
-                changes_router, safety_router, rate_limit_router,
-                permissions_router, dingtalk_router, advanced_ai_router,
-                v3_neuracore_router, feature_flags_router,
-            ]:
-                app.include_router(r)
-            cls.registered_paths = {r.path for r in app.routes if hasattr(r, 'path')}
-        except Exception as e:
-            # Surface the real error to stdout so it shows up in CI logs.
-            print("[test_routes_registration] setUpClass FAILED:", e)
-            traceback.print_exc()
-            raise
-        # Collect all registered route paths (in case of success path above)
-        if not hasattr(cls, 'registered_paths'):
-            cls.registered_paths = {r.path for r in cls.app.routes if hasattr(r, 'path')}
+        from server_final import app
+        cls.app = app
+        paths_before = {r.path for r in app.routes if hasattr(r, 'path')}
+        # Force-import every route module (in case server_final skipped any)
+        # and include each router on the app. CI must surface the result.
+        from routes.changes import router as changes_router
+        from routes.safety import router as safety_router
+        from routes.rate_limit import router as rate_limit_router
+        from routes.permissions import router as permissions_router
+        from routes.dingtalk import router as dingtalk_router
+        from routes.advanced_ai import router as advanced_ai_router
+        from routes.v3_neuracore import router as v3_neuracore_router
+        from routes.feature_flags import router as feature_flags_router
+        for r in [
+            changes_router, safety_router, rate_limit_router,
+            permissions_router, dingtalk_router, advanced_ai_router,
+            v3_neuracore_router, feature_flags_router,
+        ]:
+            app.include_router(r)
+        paths_after = {r.path for r in app.routes if hasattr(r, 'path')}
+        # Print diagnostic so it appears in CI logs.
+        print(f"[test_routes_registration] paths_before={len(paths_before)} paths_after={len(paths_after)}")
+        print(f"[test_routes_registration] /api/permission/pending in after: {'/api/permission/pending' in paths_after}")
+        cls.registered_paths = paths_after
 
     # ── Changes router ──────────────────────────────────────
     def test_changes_pending_registered(self):
