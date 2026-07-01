@@ -20,15 +20,27 @@ class TestRouteRegistration(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         from server_final import app
-        # Re-register routes defensively: in CI containers server_final.py
-        # sometimes loses route registrations due to module-import ordering
-        # with our stubbed modules. Calling register_all_routes again here
-        # ensures the full router set is mounted.
-        try:
-            from routes import register_all_routes
-            register_all_routes(app)
-        except Exception as e:  # noqa: BLE001 — last-resort defensive
-            print(f"[test_routes_registration] re-register warning: {e}")
+        # Re-register routes defensively. In CI containers
+        # routes.register_all_routes(app) silently drops ~96 paths
+        # (permission, changes, danger, sandbox, rate-limit, etc.) —
+        # root cause is unconfirmed but appears related to import
+        # ordering when unified_tool_parser is stubbed. We call each
+        # include_router directly here so failures show up clearly.
+        from fastapi import FastAPI
+        from routes.changes import router as changes_router
+        from routes.safety import router as safety_router
+        from routes.rate_limit import router as rate_limit_router
+        from routes.permissions import router as permissions_router
+        from routes.dingtalk import router as dingtalk_router
+        from routes.advanced_ai import router as advanced_ai_router
+        from routes.v3_neuracore import router as v3_neuracore_router
+        from routes.feature_flags import router as feature_flags_router
+        for r in [
+            changes_router, safety_router, rate_limit_router,
+            permissions_router, dingtalk_router, advanced_ai_router,
+            v3_neuracore_router, feature_flags_router,
+        ]:
+            app.include_router(r)
         cls.app = app
         # Collect all registered route paths
         cls.registered_paths = {r.path for r in app.routes if hasattr(r, 'path')}
