@@ -26,17 +26,17 @@ class TestRouteRegistration(unittest.TestCase):
     def setUpClass(cls):
         from server_final import app
         cls.app = app
-        # Write environment diagnostic.
         import fastapi, starlette, sys
+        # app.routes is a generator in FastAPI 0.130+ — consume it ONCE.
+        all_routes = [r for r in app.routes if hasattr(r, "path")]
         with open("/tmp/route_env.txt", "w") as f:
             f.write(f"FastAPI={fastapi.__version__}\n")
             f.write(f"Starlette={starlette.__version__}\n")
             f.write(f"Python={sys.version}\n")
             f.write(f"app id={id(app)}\n")
-            f.write(f"app.routes count={len(list(app.routes))}\n")
-            f.write(f"app.router.routes count={len(list(app.router.routes))}\n")
-            f.write(f"app.routes is app.router.routes: {app.routes is app.router.routes}\n")
-        cls.registered_paths = {r.path for r in app.routes if hasattr(r, 'path')}
+            f.write(f"total routes={len(all_routes)}\n")
+            f.write(f"permission_pending={('/api/permission/pending' in {r.path for r in all_routes})}\n")
+        cls.registered_paths = {r.path for r in all_routes}
 
     # ── Changes router ──────────────────────────────────────
     def test_changes_pending_registered(self):
