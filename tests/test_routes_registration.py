@@ -19,11 +19,10 @@ class TestRouteRegistration(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
+        import sys
         from server_final import app
         cls.app = app
         paths_before = {r.path for r in app.routes if hasattr(r, 'path')}
-        # Force-import every route module (in case server_final skipped any)
-        # and include each router on the app. CI must surface the result.
         from routes.changes import router as changes_router
         from routes.safety import router as safety_router
         from routes.rate_limit import router as rate_limit_router
@@ -39,9 +38,14 @@ class TestRouteRegistration(unittest.TestCase):
         ]:
             app.include_router(r)
         paths_after = {r.path for r in app.routes if hasattr(r, 'path')}
-        # Print diagnostic so it appears in CI logs.
-        print(f"[test_routes_registration] paths_before={len(paths_before)} paths_after={len(paths_after)}")
-        print(f"[test_routes_registration] /api/permission/pending in after: {'/api/permission/pending' in paths_after}")
+        # Use sys.stdout.write + flush so the diagnostic reaches CI logs
+        # (print() inside unittest setUpClass may be buffered).
+        sys.stdout.write(
+            f"[DIAG] paths_before={len(paths_before)} "
+            f"paths_after={len(paths_after)} "
+            f"permission_pending={('/api/permission/pending' in paths_after)}\n"
+        )
+        sys.stdout.flush()
         cls.registered_paths = paths_after
 
     # ── Changes router ──────────────────────────────────────
